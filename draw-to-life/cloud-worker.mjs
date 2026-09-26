@@ -68,9 +68,9 @@ async function readJson(request) {
   }
 }
 
-// Assets are supplied by the build, so the hosted runtime never needs filesystem access.
+                                                                                         
 export function createWorker(assets, { recognizeImpl = recognize } = {}) {
-  // These are secondary per-isolate safeguards, not global billing limits.
+                                                                           
   let requests = 0;
   let active = 0;
   let unlockAttempts = 0;
@@ -79,7 +79,7 @@ export function createWorker(assets, { recognizeImpl = recognize } = {}) {
     async fetch(request, env = {}) {
       const url = new URL(request.url);
       const secret = env.CONTROL_PIN || '';
-      // Fail closed: a cloud AI key alone must never expose a paid endpoint.
+                                                                             
       const aiEnabled = Boolean(env.GEMINI_API_KEY) && secret.length >= 16;
       const limit = Number(env.MAX_AI_REQUESTS || 200);
       try {
