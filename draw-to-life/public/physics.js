@@ -50,7 +50,7 @@ export function parseLabels(labels) {
       const conversions = { x0: { m: 1, cm: .01, km: 1000 }, v0: { 'm/s': 1, 'km/h': 1/3.6, 'cm/s': .01 }, a: { 'm/s^2': 1, 'm/s2': 1, 'cm/s^2': .01 }, t: { s: 1, sec: 1, min: 60 } };
       if (!(unit in conversions[key])) { result.warnings.push(`Use a clear unit for ${key}.`); continue; }
       const value = Number(raw) * conversions[key][unit];
-      if (key === 't' && value === 0) continue; // An initial-pose label is not the elapsed-time question.
+      if (key === 't' && value === 0) continue;                                                           
       if (result[key] !== null && result[key] !== value) { result.warnings.push(`Conflicting ${key} labels. Review the value.`); result[key] = null; }
       else result[key] = value;
     }
