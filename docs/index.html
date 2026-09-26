@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff"><meta name="description" content="A scripted Draw to Life hackathon demonstration of one motorcycle physics problem.">
 <title>Draw to Life · Scripted demo</title>
-<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css">
+<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=motorcycle-ink-2">
 </head>
 <body>
 <header class="topbar">
@@ -50,7 +50,7 @@
       <div class="clip-heading"><h2>Your problem, in motion.</h2><span class="fine">Preset clip</span></div>
       <div class="clip-frame"><canvas id="video-canvas" width="900" height="420" aria-label="Preset animation of the supplied motorcycle problem"></canvas></div>
       <div class="clip-controls"><button id="play-video" aria-label="Play or pause visualization">▶</button><input id="video-timeline" type="range" min="0" max="1000" value="0" aria-label="Visualization time"><span id="video-time">0.00 s</span><button id="replay-video" aria-label="Replay visualization">↺</button></div>
-      <p class="fine">Prepared motorcycle animation using your inserted picture, not an AI-generated video.</p>
+      <p class="fine">Prepared motorcycle animation. Your inserted problem stays on the whiteboard as a reference.</p>
     </section>
     <section id="guidance-offer" class="question-card" hidden><h3>Want guidance solving it?</h3><p>Choose an equation, substitute the values, then finish the calculation.</p><button id="start-guidance" class="primary">Yes, guide me <span>→</span></button></section>
     <section id="guidance-card" hidden aria-live="polite">
@@ -65,7 +65,7 @@
   </aside>
 </main>
 <div id="toast" role="status" hidden></div>
-<dialog id="about-dialog"><div class="dialog-top"><span class="eyebrow">HACKATHON PROTOTYPE</span><button id="close-about" aria-label="Close instructions">×</button></div><h2>A demonstration of the idea.</h2><p>This version has no AI, API key, server, or handwriting recognition. Images are never preloaded: choose one from your device. Inserted images stay in this browser.</p><ol><li>Use <b>Add image</b> to insert the motorcycle problem screenshot. Drag it into place with <b>Move</b>, then click it and tap <b>Check</b>.</li><li>Read the preset motorcycle overview. Choose <b>Visualize this</b> to play the prepared clip.</li><li>Choose <b>Yes, guide me</b>. Handwrite each step, choose <b>Box step</b>, draw a box around the ink, and tap <b>Check</b>.</li><li>The three scripted results are: correct formula, incorrect acceleration (3 instead of 4), then correct final answer.</li></ol><p class="fine">Any selected ink triggers that step's predetermined response. This demonstrates the planned interaction, not real recognition or grading. The animation's crop and physics are designed for that one motorcycle screenshot, not arbitrary problems. Refreshing or restarting clears the board.</p></dialog>
-<script type="module" src="demo.js"></script>
+<dialog id="about-dialog"><div class="dialog-top"><span class="eyebrow">HACKATHON PROTOTYPE</span><button id="close-about" aria-label="Close instructions">×</button></div><h2>A demonstration of the idea.</h2><p>This version has no AI, API key, server, or handwriting recognition. Images are never preloaded: choose one from your device. Inserted images stay in this browser.</p><ol><li>Use <b>Add image</b> to insert the motorcycle problem screenshot. Drag it into place with <b>Move</b>, then click it and tap <b>Check</b>.</li><li>Read the preset motorcycle overview. Choose <b>Visualize this</b> to watch a separately drawn motorcycle accelerate; your uploaded image is not the moving object.</li><li>Choose <b>Yes, guide me</b>. Keep <b>Pen</b> selected while writing as many strokes as you need. Only when finished, choose <b>Box step</b>, draw a box around the ink, and tap <b>Check</b>. Tap <b>Pen</b> to keep writing.</li><li>The three scripted results are: correct formula, incorrect acceleration (3 instead of 4), then correct final answer.</li></ol><p class="fine">Any selected ink triggers that step's predetermined response. This demonstrates the planned interaction, not real recognition or grading. The preset motion and physics describe this one motorcycle problem, not arbitrary problems. Refreshing or restarting clears the board.</p></dialog>
+<script type="module" src="demo.js?v=motorcycle-ink-2"></script>
 </body>
 </html>
