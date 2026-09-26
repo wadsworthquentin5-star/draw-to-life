@@ -1,0 +1,14 @@
+{
+  "name": "draw-to-life",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Draw, animate, and solve a constant-acceleration physics problem.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "build": "node scripts/build-cloud.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "test": "node --test"
+  }
+}
