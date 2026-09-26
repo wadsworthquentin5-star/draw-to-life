@@ -1,5 +1,5 @@
 import {DEMO_STEPS,normaliseBox,selectInkIds} from './demo-model.js';
-import {DemoSimulation} from './demo-simulation.js';
+import {DemoSimulation} from './demo-simulation.js?v=motorcycle-ink-2';
 
 const $=id=>document.getElementById(id), W=1400,H=1000;
 const canvas=$('ink-canvas'),ctx=canvas.getContext('2d'),board=$('board');
@@ -37,9 +37,12 @@ function positionCheck(){
 }
 function selectImage(selected){imageSelected=selected;$('image-card').classList.toggle('selected',selected);$('image-card').setAttribute('aria-pressed',String(selected));if(selected){selection=null;selectedIds=[];render();}positionCheck();}
 function setTool(next){
-  tool=next;document.body.dataset.tool=next;document.querySelectorAll('[data-tool]').forEach(b=>{const active=b.dataset.tool===next;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
-  if(next!=='move')selectImage(false);
-  $('tool-hint').textContent={move:'Drag or resize the image. Click it to select.',pen:'Handwrite your step, then switch to Box step.',box:'Drag a box fully around your new handwritten step.',eraser:'Drag across a stroke to erase it.'}[next];
+  if(!['move','pen','box','eraser'].includes(next))return;
+  // Tools change only through an explicit toolbar/shortcut action, never on pen-up.
+  cancelPointer();
+  tool=next;document.body.dataset.tool=next;document.querySelectorAll('button[data-tool]').forEach(b=>{const active=b.dataset.tool===next;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
+  clearSelection();
+  $('tool-hint').textContent={move:'Drag or resize the image. Click it to select.',pen:'Pen stays on. Finish writing, then choose Box step.',box:'Drag a box fully around your new handwritten step.',eraser:'Drag across a stroke to erase it.'}[next];
   canvas.style.cursor=next==='pen'?'crosshair':next==='eraser'?'cell':next==='box'?'crosshair':'default';
 }
 function clearSelection(){selection=null;selectedIds=[];selectImage(false);$('selection-help').hidden=true;render();}
@@ -54,8 +57,7 @@ function loading(title,copy,duration,done){
 }
 function scrollPanel(){if(matchMedia('(max-width:760px)').matches)$('story-panel').scrollIntoView({block:'start',behavior:'smooth'});else $('story-panel').scrollTop=0;}
 function resetFlow(){
-  const activePointer=pointer;pointer=null;
-  if(activePointer){const owner=['image','resize'].includes(activePointer.kind)?$('image-card'):canvas;if(owner.hasPointerCapture(activePointer.id))owner.releasePointerCapture(activePointer.id);}
+  cancelPointer();
   cancelLoading();simulation?.destroy();simulation=null;strokes=[];history=[];checkedIds=new Set();stepIndex=0;stepChecked=false;phase='place';clearSelection();
   for(const id of ['loading-card','overview-card','video-card','guidance-offer','guidance-card','complete-card','step-feedback','next-step'])$(id).hidden=true;
   $('story-panel').hidden=true;$('phase-caption').textContent='01 / PLACE YOUR PROBLEM';setTool('move');render();resize();
@@ -76,9 +78,29 @@ async function placeImage(src,{objectURL=false,version=++imageLoadVersion}={}){
 }
 function upload(file){if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('Choose a PNG, JPG or WebP image.');return;}if(file.size>12*1024*1024){toast('Choose an image smaller than 12 MB.');return;}const version=++imageLoadVersion;placeImage(URL.createObjectURL(file),{objectURL:true,version});}
 
+function capturePointer(owner,id){try{owner.setPointerCapture(id);}catch{/* Window-level end handlers cover browsers that decline capture. */}}
+function releasePointer(active){
+  const owner=['image','resize'].includes(active.kind)?$('image-card'):canvas;
+  try{if(owner.hasPointerCapture(active.id))owner.releasePointerCapture(active.id);}catch{/* Capture may already have been lost. */}
+}
+function cancelPointer(){if(pointer)finishPointer({pointerId:pointer.id,type:'cancel'});}
+function canStartPointer(event){
+  if(event.button!==0||event.isPrimary===false)return false;
+  if(pointer){
+    // A fresh primary down with the same ID means its previous end was missed.
+    // A second finger/palm must never replace the active Pencil stroke.
+    if(event.pointerId!==pointer.id||event.pointerType!==pointer.pointerType)return false;
+    cancelPointer();
+  }
+  return true;
+}
+function clearNativeSelection(){
+  const native=window.getSelection?.();
+  if(native&&(board.contains(native.anchorNode)||board.contains(native.focusNode)))native.removeAllRanges();
+}
 $('image-card').addEventListener('pointerdown',event=>{
-  if(tool!=='move'||busy||event.button!==0||pointer)return;event.preventDefault();selectImage(true);
-  const p=world(event),resizing=event.target===$('resize-image');pointer={id:event.pointerId,kind:resizing?'resize':'image',start:p,rect:{...imageRect}};$('image-card').setPointerCapture(event.pointerId);
+  if(tool!=='move'||busy||!imageRect||!canStartPointer(event))return;event.preventDefault();clearNativeSelection();selectImage(true);
+  const p=world(event),resizing=event.target===$('resize-image');pointer={id:event.pointerId,pointerType:event.pointerType,kind:resizing?'resize':'image',start:p,rect:{...imageRect}};capturePointer($('image-card'),event.pointerId);
 });
 $('image-card').addEventListener('pointermove',event=>{
   if(!pointer||pointer.id!==event.pointerId||!['image','resize'].includes(pointer.kind))return;const p=world(event),r=pointer.rect;
@@ -86,7 +108,7 @@ $('image-card').addEventListener('pointermove',event=>{
   else{const aspect=r.height/r.width,maxWidth=Math.min(W-r.x,(H-r.y)/aspect);imageRect.width=clamp(r.width+p.x-pointer.start.x,Math.min(240,maxWidth),maxWidth);imageRect.height=imageRect.width*aspect;}
   positionImage();positionCheck();
 });
-for(const name of ['pointerup','pointercancel'])$('image-card').addEventListener(name,event=>{if(pointer?.id===event.pointerId){pointer=null;positionCheck();}});
+for(const name of ['pointerup','pointercancel','lostpointercapture'])$('image-card').addEventListener(name,finishPointer);
 $('image-card').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setTool('move');selectImage(true);}});
 
 function erase(point){
@@ -94,10 +116,10 @@ function erase(point){
   selectedIds=[];selection=null;positionCheck();render();
 }
 canvas.addEventListener('pointerdown',event=>{
-  if(event.button!==0||pointer||busy||($('pencil-only').checked&&event.pointerType!=='pen'))return;
-  event.preventDefault();const p=world(event);selectImage(false);$('selection-help').hidden=true;
+  if(busy||($('pencil-only').checked&&event.pointerType!=='pen')||!canStartPointer(event))return;
+  event.preventDefault();clearNativeSelection();canvas.focus({preventScroll:true});const p=world(event);selectImage(false);$('selection-help').hidden=true;
   if(tool==='move'){clearSelection();return;}
-  canvas.setPointerCapture(event.pointerId);pointer={id:event.pointerId,kind:tool,start:p};
+  pointer={id:event.pointerId,pointerType:event.pointerType,kind:tool,start:p};capturePointer(canvas,event.pointerId);
   if(tool==='box'){selectedIds=[];selection=normaliseBox(p,p);}
   else if(tool==='pen'){checkpoint();selection=null;selectedIds=[];const stroke={id:`ink-${++serial}`,type:'pen',points:[p]};strokes.push(stroke);pointer.stroke=stroke;}
   else if(tool==='eraser'){checkpoint();erase(p);}
@@ -105,21 +127,35 @@ canvas.addEventListener('pointerdown',event=>{
 });
 canvas.addEventListener('pointermove',event=>{
   if(pointer?.id!==event.pointerId)return;event.preventDefault();const p=world(event);
-  if(pointer.kind==='pen'){const events=event.getCoalescedEvents?.()||[event];for(const e of events)pointer.stroke.points.push(world(e));}
+  if(pointer.kind==='pen'){const coalesced=event.getCoalescedEvents?.(),events=coalesced?.length?coalesced:[event];for(const e of events)pointer.stroke.points.push(world(e));}
   else if(pointer.kind==='box')selection=normaliseBox(pointer.start,p);
   else if(pointer.kind==='eraser')erase(p);
   render();
 });
 function finishPointer(event){
-  if(pointer?.id!==event.pointerId)return;const wasBox=pointer.kind==='box';pointer=null;
+  if(pointer?.id!==event.pointerId)return;
+  const active=pointer,wasBox=active.kind==='box',completed=event.type==='pointerup';pointer=null;releasePointer(active);
+  if(completed&&Number.isFinite(event.clientX)&&Number.isFinite(event.clientY)){
+    if(wasBox)selection=normaliseBox(active.start,world(event));
+    else if(active.kind==='pen')active.stroke.points.push(world(event));
+  }
   if(wasBox){
-    selectedIds=selectInkIds(strokes.filter(s=>!checkedIds.has(s.id)),selection);
-    $('selection-help').hidden=false;
-    $('selection-help').textContent=phase!=='guided'?'Start guidance after the visualization to check a handwritten step.':stepChecked?'Use Next step to continue the script.':selectedIds.length?'Step selected. Tap the black Check bubble.':'Include the whole handwritten step in the box. Previously checked ink is not selected again.';
+    if(completed){
+      selectedIds=selectInkIds(strokes.filter(s=>!checkedIds.has(s.id)),selection);
+      $('selection-help').hidden=false;
+      $('selection-help').textContent=phase!=='guided'?'Start guidance after the visualization to check a handwritten step.':stepChecked?'Use Next step to continue the script.':selectedIds.length?'Step selected. Tap the black Check bubble.':'Include the whole handwritten step in the box. Previously checked ink is not selected again.';
+    }else{selection=null;selectedIds=[];$('selection-help').hidden=true;}
   }
   render();positionCheck();
 }
-canvas.addEventListener('pointerup',finishPointer);canvas.addEventListener('pointercancel',finishPointer);
+for(const name of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(name,finishPointer);
+// Recover even when a lift/cancel happens outside the canvas or Safari loses capture.
+for(const name of ['pointerup','pointercancel'])window.addEventListener(name,finishPointer,true);
+window.addEventListener('blur',cancelPointer);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPointer();});
+for(const name of ['contextmenu','dragstart','selectstart'])board.addEventListener(name,event=>{
+  if(!event.target.closest?.('input,textarea,select,[contenteditable]'))event.preventDefault();
+});
 
 function checkImage(){
   if(!imageRect||busy)return;phase='reviewing';selectImage(false);$('phase-caption').textContent='02 / UNDERSTAND THE PROBLEM';
@@ -132,7 +168,7 @@ async function visualize(){
       const image=placedImage;if(phase!=='generating')return;
       if(!image)throw new Error('Insert your motorcycle problem image first.');
       phase='clip';$('video-card').hidden=false;$('phase-caption').textContent='03 / SEE IT IN MOTION';
-      simulation?.destroy();simulation=new DemoSimulation($('video-canvas'),image,frame=>{
+      simulation?.destroy();simulation=new DemoSimulation($('video-canvas'),null,frame=>{
         $('video-time').textContent=`${frame.time.toFixed(2)} s`;$('video-timeline').value=String(frame.time/2*1000);$('play-video').textContent=frame.playing?'Ⅱ':'▶';
       },offerGuidance);
       scrollPanel();if(!matchMedia('(prefers-reduced-motion:reduce)').matches)simulation.play();else toast('Tap Play to watch the prepared clip.');
@@ -187,7 +223,7 @@ $('add-image').onclick=$('empty-upload').onclick=()=>$('image-input').click();
 $('image-input').onchange=event=>{upload(event.target.files[0]);event.target.value='';};
 document.addEventListener('paste',event=>{if(document.querySelector('dialog[open]'))return;const file=[...event.clipboardData?.items||[]].find(i=>i.kind==='file'&&i.type.startsWith('image/'))?.getAsFile();if(file){event.preventDefault();upload(file);}});
 board.addEventListener('dragover',event=>event.preventDefault());board.addEventListener('drop',event=>{event.preventDefault();upload(event.dataTransfer.files[0]);});
-document.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>setTool(button.dataset.tool));
+document.querySelectorAll('button[data-tool]').forEach(button=>button.onclick=()=>setTool(button.dataset.tool));
 $('choose-box').onclick=()=>{setTool('box');board.scrollIntoView({block:'start',behavior:'smooth'});toast('Drag a box around the whole handwritten step.');};
 $('selection-check').onclick=()=>imageSelected?checkImage():checkInk();$('visualize').onclick=visualize;$('start-guidance').onclick=startGuidance;$('next-step').onclick=nextStep;
 $('restart').onclick=restart;$('run-again').onclick=restart;
@@ -196,6 +232,11 @@ $('video-timeline').oninput=event=>{simulation?.seek(Number(event.target.value)/
 $('undo').onclick=()=>{if(busy||!history.length)return;strokes=history.pop();clearSelection();render();};
 $('clear-ink').onclick=()=>{if(!strokes.length||busy)return;if(!confirm('Clear the handwriting? You can undo this.'))return;checkpoint();strokes=[];clearSelection();render();};
 $('about').onclick=()=>$('about-dialog').showModal();$('close-about').onclick=()=>$('about-dialog').close();
-document.addEventListener('keydown',event=>{if(document.querySelector('dialog[open]')||/INPUT|TEXTAREA/.test(event.target.tagName))return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();$('undo').click();}else if(event.key==='Escape'){clearSelection();}else if(!event.ctrlKey&&!event.metaKey){const mode={p:'pen',b:'box',m:'move',e:'eraser'}[event.key.toLowerCase()];if(mode)setTool(mode);}});
-window.addEventListener('pagehide',()=>{simulation?.destroy();if(imageObjectURL)URL.revokeObjectURL(imageObjectURL);});
-new ResizeObserver(resize).observe(board);setTool('move');resize();
+document.addEventListener('keydown',event=>{
+  if(event.defaultPrevented||event.isComposing||event.repeat||event.altKey||document.querySelector('dialog[open]')||event.target.isContentEditable||event.target.closest?.('input,textarea,select,[contenteditable]'))return;
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();cancelPointer();$('undo').click();}
+  else if(event.key==='Escape'){cancelPointer();clearSelection();}
+  else if(!event.ctrlKey&&!event.metaKey){const mode={p:'pen',b:'box',m:'move',e:'eraser'}[event.key.toLowerCase()];if(mode){event.preventDefault();setTool(mode);}}
+});
+window.addEventListener('pagehide',()=>{cancelPointer();simulation?.destroy();if(imageObjectURL)URL.revokeObjectURL(imageObjectURL);});
+canvas.tabIndex=0;new ResizeObserver(resize).observe(board);setTool('move');resize();
