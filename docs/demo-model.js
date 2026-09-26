@@ -1,5 +1,3 @@
-// This module is a storyboard, not an OCR engine or a handwriting grader.
-// Selecting ink only triggers the next prewritten response in this fixed demo.
 export const DEMO_OVERVIEW = Object.freeze({
   simulated: true,
   title: 'A motorcyclist accelerating east',
@@ -57,31 +55,36 @@ export const MIN_SELECTION_SIZE = 8;
 const inkTypes = new Set(['pen', 'line', 'circle', 'arrow', 'rectangle', 'rect']);
 const finitePoint = point => point != null && Number.isFinite(point.x) && Number.isFinite(point.y);
 
-// Either drag direction is valid. Invalid geometry never selects anything.
-export function normaliseBox(start, end) {
-  if (!finitePoint(start) || !finitePoint(end)) return null;
-  const left = Math.min(start.x, end.x), top = Math.min(start.y, end.y);
-  const right = Math.max(start.x, end.x), bottom = Math.max(start.y, end.y);
-  return { left, top, right, bottom, width: right - left, height: bottom - top };
-}
-
-function rectangleBounds(box) {
-  if (!box || typeof box !== 'object') return null;
-  if ([box.left, box.top, box.right, box.bottom].every(Number.isFinite)) {
-    return normaliseBox({ x: box.left, y: box.top }, { x: box.right, y: box.bottom });
+class GeometryBounds {
+  constructor(left, top, right, bottom) {
+    Object.assign(this, { left, top, right, bottom });
   }
-  if ([box.x, box.y, box.width, box.height].every(Number.isFinite)) {
-    return normaliseBox({ x: box.x, y: box.y }, { x: box.x + box.width, y: box.y + box.height });
-  }
-  return null;
-}
 
-function inkBounds(item) {
-  if (Array.isArray(item.points)) {
-    if (!item.points.length || !item.points.every(finitePoint)) return null;
-    const bounds = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
-    // Long Pencil strokes should not overflow a function's argument limit.
-    for (const point of item.points) {
+  static fromCorners(start, end) {
+    if (!finitePoint(start) || !finitePoint(end)) return null;
+    return new GeometryBounds(
+      Math.min(start.x, end.x), Math.min(start.y, end.y),
+      Math.max(start.x, end.x), Math.max(start.y, end.y),
+    );
+  }
+
+  static fromRectangle(rectangle) {
+    if (!rectangle || typeof rectangle !== 'object') return null;
+    const { left, top, right, bottom, x, y, width, height } = rectangle;
+    if ([left, top, right, bottom].every(Number.isFinite)) {
+      return GeometryBounds.fromCorners({ x: left, y: top }, { x: right, y: bottom });
+    }
+    if ([x, y, width, height].every(Number.isFinite)) {
+      return GeometryBounds.fromCorners({ x, y }, { x: x + width, y: y + height });
+    }
+    return null;
+  }
+
+  static fromPoints(points) {
+    if (!points.length) return null;
+    const bounds = new GeometryBounds(Infinity, Infinity, -Infinity, -Infinity);
+    for (const point of points) {
+      if (!finitePoint(point)) return null;
       bounds.left = Math.min(bounds.left, point.x);
       bounds.top = Math.min(bounds.top, point.y);
       bounds.right = Math.max(bounds.right, point.x);
@@ -89,21 +92,40 @@ function inkBounds(item) {
     }
     return bounds;
   }
-  return rectangleBounds(item.bbox || item.bounds);
+
+  get width() { return this.right - this.left; }
+  get height() { return this.bottom - this.top; }
+
+  contains(bounds) {
+    return bounds !== null && bounds.left >= this.left && bounds.right <= this.right
+      && bounds.top >= this.top && bounds.bottom <= this.bottom;
+  }
+
+  toRectangle() {
+    const { left, top, right, bottom, width, height } = this;
+    return { left, top, right, bottom, width, height };
+  }
 }
 
-// A selection is geometric only. It never interprets what the user wrote.
-// Partially intersecting strokes, text labels and imported images are excluded.
+function resolveInkBounds(item) {
+  return Array.isArray(item.points)
+    ? GeometryBounds.fromPoints(item.points)
+    : GeometryBounds.fromRectangle(item.bbox || item.bounds);
+}
+
+export function normaliseBox(start, end) {
+  return GeometryBounds.fromCorners(start, end)?.toRectangle() ?? null;
+}
+
 export function selectInkIds(items, rectangle) {
-  const box = rectangleBounds(rectangle);
+  const box = GeometryBounds.fromRectangle(rectangle);
   if (!Array.isArray(items) || !box || box.width < MIN_SELECTION_SIZE || box.height < MIN_SELECTION_SIZE) return [];
-  const selected = [];
+  const selected = new Set();
   for (const item of items) {
     if (!item || !inkTypes.has(item.type) || item.id == null) continue;
-    const bounds = inkBounds(item);
-    if (bounds && bounds.left >= box.left && bounds.right <= box.right && bounds.top >= box.top && bounds.bottom <= box.bottom) selected.push(item.id);
+    if (box.contains(resolveInkBounds(item))) selected.add(item.id);
   }
-  return [...new Set(selected)];
+  return [...selected];
 }
 
 export function hasBoxedInk(items, rectangle) {

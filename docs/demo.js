@@ -9,48 +9,295 @@ const camera={scale:1,offsetX:0,offsetY:0},viewport={width:0,height:0},touches=n
 let cameraReady=false,pinch=null,touchNavigation=false,lastPenTime=-Infinity;
 let phase='place',stepIndex=0,stepChecked=false,checkedIds=new Set(),busy=false,generation=0,simulation=null;
 let toastTimer,loadingTimers=[],imageLoadVersion=0;
-// No image is created, loaded, or placed until the user inserts one.
+
+const TOOL_DEFINITIONS = Object.freeze({
+  move: { cursor: 'grab', hint: 'Drag blank space to pan. Drag or resize any image.' },
+  pen: { cursor: 'crosshair', hint: 'Pen stays on. Pinch to zoom; choose Box only when finished.' },
+  box: { cursor: 'crosshair', hint: 'Drag a box fully around your handwritten step.' },
+  eraser: { cursor: 'cell', hint: 'Drag across a stroke to erase it.' },
+});
+
+const TOOL_SHORTCUTS = Object.freeze({ p: 'pen', b: 'box', m: 'move', e: 'eraser' });
+
+class ContentBounds {
+  constructor() {
+    this.left = Infinity;
+    this.top = Infinity;
+    this.right = -Infinity;
+    this.bottom = -Infinity;
+  }
+
+  includePoint({ x, y }) {
+    this.left = Math.min(this.left, x);
+    this.top = Math.min(this.top, y);
+    this.right = Math.max(this.right, x);
+    this.bottom = Math.max(this.bottom, y);
+    return this;
+  }
+
+  includeRectangle(rectangle) {
+    this.includePoint(rectangle);
+    this.includePoint({
+      x: rectangle.x + rectangle.width,
+      y: rectangle.y + rectangle.height,
+    });
+    return this;
+  }
+
+  get empty() {
+    return !Number.isFinite(this.left);
+  }
+
+  get center() {
+    return { x: (this.left + this.right) / 2, y: (this.top + this.bottom) / 2 };
+  }
+
+  static collect(references, ink) {
+    const bounds = new ContentBounds();
+    for (const reference of references) bounds.includeRectangle(reference.rect);
+    for (const stroke of ink) {
+      for (const point of stroke.points) bounds.includePoint(point);
+    }
+    return bounds;
+  }
+}
+
+class CameraController {
+  constructor(state, dimensions, element) {
+    this.state = state;
+    this.dimensions = dimensions;
+    this.element = element;
+  }
+
+  get center() {
+    return { x: this.dimensions.width / 2, y: this.dimensions.height / 2 };
+  }
+
+  localPoint(event) {
+    const rectangle = this.element.getBoundingClientRect();
+    return { x: event.clientX - rectangle.left, y: event.clientY - rectangle.top };
+  }
+
+  worldPoint(point) {
+    return {
+      x: (point.x - this.state.offsetX) / this.state.scale,
+      y: (point.y - this.state.offsetY) / this.state.scale,
+    };
+  }
+
+  screenPoint(point) {
+    return {
+      x: point.x * this.state.scale + this.state.offsetX,
+      y: point.y * this.state.scale + this.state.offsetY,
+    };
+  }
+
+  anchor(worldPoint, screenPoint = this.center) {
+    this.state.offsetX = screenPoint.x - worldPoint.x * this.state.scale;
+    this.state.offsetY = screenPoint.y - worldPoint.y * this.state.scale;
+  }
+
+  initialize() {
+    this.state.scale = clamp(Math.min(this.dimensions.width / W, this.dimensions.height / H), .15, 4);
+    this.anchor({ x: W / 2, y: H / 2 });
+  }
+
+  measure(preserveCenter) {
+    const center = preserveCenter ? this.worldPoint(this.center) : null;
+    const rectangle = this.element.getBoundingClientRect();
+    const density = Math.min(devicePixelRatio || 1, 2);
+    this.dimensions.width = Math.max(1, rectangle.width);
+    this.dimensions.height = Math.max(1, rectangle.height);
+    this.element.width = Math.round(this.dimensions.width * density);
+    this.element.height = Math.round(this.dimensions.height * density);
+    if (center) this.anchor(center);
+    else this.initialize();
+  }
+
+  zoom(nextScale, anchorPoint = this.center) {
+    const fixed = this.worldPoint(anchorPoint);
+    this.state.scale = clamp(nextScale, this.state.scale < .15 ? .0001 : .15, 4);
+    this.anchor(fixed, anchorPoint);
+  }
+
+  fit(bounds) {
+    const fittedScale = Math.min(
+      Math.max(1, this.dimensions.width - 100) / Math.max(80, bounds.right - bounds.left),
+      Math.max(1, this.dimensions.height - 100) / Math.max(80, bounds.bottom - bounds.top),
+    );
+    this.state.scale = clamp(fittedScale, .0001, 4);
+    this.anchor(bounds.center);
+    return fittedScale;
+  }
+
+  get zoomLabel() {
+    const percent = this.state.scale * 100;
+    const value = percent < 1 ? percent.toFixed(2) : percent < 10 ? percent.toFixed(1) : Math.round(percent);
+    return `${value}%`;
+  }
+}
+
+class CanvasRenderer {
+  constructor(element, context, transform) {
+    this.element = element;
+    this.context = context;
+    this.transform = transform;
+  }
+
+  prepare() {
+    const context = this.context;
+    const density = Math.min(devicePixelRatio || 1, 2);
+    const { scale, offsetX, offsetY } = this.transform;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, this.element.width, this.element.height);
+    context.setTransform(density * scale, 0, 0, density * scale, density * offsetX, density * offsetY);
+  }
+
+  stroke(stroke) {
+    const points = stroke.points;
+    if (!points.length) return;
+    const context = this.context;
+    context.strokeStyle = '#282d23';
+    context.lineWidth = 4.5;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    for (const point of points.slice(1)) context.lineTo(point.x, point.y);
+    if (points.length === 1) context.lineTo(points[0].x + .1, points[0].y);
+    context.stroke();
+  }
+
+  selection(rectangle, selected) {
+    const context = this.context;
+    context.save();
+    context.strokeStyle = '#86a75f';
+    context.lineWidth = 2.5;
+    context.fillStyle = '#b5d08f18';
+    context.setLineDash(selected ? [9, 7] : [6, 6]);
+    context.fillRect(rectangle.left, rectangle.top, rectangle.width, rectangle.height);
+    context.strokeRect(rectangle.left, rectangle.top, rectangle.width, rectangle.height);
+    context.restore();
+  }
+
+  draw(ink, rectangle, selected) {
+    this.prepare();
+    for (const stroke of ink) this.stroke(stroke);
+    if (rectangle) this.selection(rectangle, selected);
+  }
+}
+
+class ReferenceLayer {
+  constructor(host, transform) {
+    this.host = host;
+    this.transform = transform;
+  }
+
+  mount(item, reuseTemplate) {
+    const card = reuseTemplate ? $('image-card') : document.createElement('div');
+    const image = reuseTemplate ? $('problem-image') : document.createElement('img');
+    const handle = reuseTemplate ? $('resize-image') : document.createElement('button');
+    card.classList.add('image-card');
+    card.dataset.imageId = item.id;
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', 'Inserted image. Use Move to reposition or resize.');
+    image.classList.add('problem-image');
+    image.src = item.src;
+    image.alt = 'Your inserted problem image';
+    image.draggable = false;
+    handle.classList.add('resize-image');
+    handle.setAttribute('aria-label', 'Resize this image');
+    handle.textContent = '↘';
+    if (!reuseTemplate) {
+      card.append(image, handle);
+      this.host.append(card);
+    }
+    card.hidden = false;
+    Object.assign(item, { card, img: image, handle });
+  }
+
+  layout(references) {
+    for (const item of references) {
+      const point = this.transform.screenPoint(item.rect);
+      Object.assign(item.card.style, {
+        left: point.x + 'px',
+        top: point.y + 'px',
+        width: item.rect.width * this.transform.state.scale + 'px',
+        height: item.rect.height * this.transform.state.scale + 'px',
+      });
+    }
+  }
+
+  select(references, selectedId) {
+    for (const item of references) {
+      const active = item.id === selectedId;
+      item.card.classList.toggle('selected', active);
+      item.card.setAttribute('aria-pressed', String(active));
+    }
+  }
+
+  dispose(references) {
+    for (const item of references) {
+      if (item.objectURL) URL.revokeObjectURL(item.src);
+      if (item.card !== $('image-card')) item.card.remove();
+    }
+  }
+}
+
+class EventBindings {
+  listen(target, names, callback, options) {
+    for (const name of Array.isArray(names) ? names : [names]) {
+      target.addEventListener(name, callback, options);
+    }
+    return this;
+  }
+
+  actions(definitions) {
+    for (const [id, callback] of Object.entries(definitions)) $(id).onclick = callback;
+    return this;
+  }
+}
+
+const cameraController = new CameraController(camera, viewport, canvas);
+const canvasRenderer = new CanvasRenderer(canvas, ctx, camera);
+const referenceLayer = new ReferenceLayer(surface, cameraController);
+const eventBindings = new EventBindings();
 
 function toast(message){clearTimeout(toastTimer);$('toast').textContent=message;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
-function local(event){const r=canvas.getBoundingClientRect();return {x:event.clientX-r.left,y:event.clientY-r.top};}
-function localToWorld(p){return {x:(p.x-camera.offsetX)/camera.scale,y:(p.y-camera.offsetY)/camera.scale};}
+function local(event){return cameraController.localPoint(event);}
+function localToWorld(p){return cameraController.worldPoint(p);}
 function world(event){return localToWorld(local(event));}
-function screen(p){return {x:p.x*camera.scale+camera.offsetX,y:p.y*camera.scale+camera.offsetY};}
+function screen(p){return cameraController.screenPoint(p);}
 function checkpoint(){history.push(structuredClone(strokes));if(history.length>40)history.shift();}
-function redraw(){render();positionImage();positionCheck();if($('zoom-level')){const percent=camera.scale*100;$('zoom-level').textContent=`${percent<1?percent.toFixed(2):percent<10?percent.toFixed(1):Math.round(percent)}%`;}}
-function initialCamera(){camera.scale=clamp(Math.min(viewport.width/W,viewport.height/H),.15,4);camera.offsetX=(viewport.width-W*camera.scale)/2;camera.offsetY=(viewport.height-H*camera.scale)/2;cameraReady=true;}
+function redraw(){render();positionImage();positionCheck();if($('zoom-level'))$('zoom-level').textContent=cameraController.zoomLabel;}
+function initialCamera(){cameraController.initialize();cameraReady=true;}
 function resize(){
-  const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2),center=cameraReady?localToWorld({x:viewport.width/2,y:viewport.height/2}):null;
-  viewport.width=Math.max(1,r.width);viewport.height=Math.max(1,r.height);canvas.width=Math.round(viewport.width*d);canvas.height=Math.round(viewport.height*d);
-  if(!cameraReady)initialCamera();else{camera.offsetX=viewport.width/2-center.x*camera.scale;camera.offsetY=viewport.height/2-center.y*camera.scale;}
+  cameraController.measure(cameraReady);
+  cameraReady=true;
   redraw();
 }
 function zoomAt(nextScale,anchor={x:viewport.width/2,y:viewport.height/2}){
-  const fixed=localToWorld(anchor);camera.scale=clamp(nextScale,camera.scale<.15?.0001:.15,4);camera.offsetX=anchor.x-fixed.x*camera.scale;camera.offsetY=anchor.y-fixed.y*camera.scale;redraw();
+  cameraController.zoom(nextScale,anchor);redraw();
 }
 function resetZoom(){cancelInteraction();zoomAt(1);}
 function fitContent(){
-  cancelInteraction();let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
-  const include=(x,y)=>{left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);};
-  for(const item of images){include(item.rect.x,item.rect.y);include(item.rect.x+item.rect.width,item.rect.y+item.rect.height);}
-  for(const stroke of strokes)for(const p of stroke.points)include(p.x,p.y);
-  if(!Number.isFinite(left)){initialCamera();redraw();return;}
-  const fitScale=Math.min(Math.max(1,viewport.width-100)/Math.max(80,right-left),Math.max(1,viewport.height-100)/Math.max(80,bottom-top));
-  camera.scale=clamp(fitScale,.0001,4);
+  cancelInteraction();
+  const bounds=ContentBounds.collect(images,strokes);
+  if(bounds.empty){initialCamera();redraw();return;}
+  const fitScale=cameraController.fit(bounds);
   if(fitScale<.0001)toast('These items are extremely far apart. Use Move to pan between regions.');
-  camera.offsetX=viewport.width/2-(left+right)/2*camera.scale;camera.offsetY=viewport.height/2-(top+bottom)/2*camera.scale;redraw();
+  redraw();
 }
 const fitView=fitContent,resetView=resetZoom;
 function render(){
-  const d=Math.min(devicePixelRatio||1,2);ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.setTransform(d*camera.scale,0,0,d*camera.scale,d*camera.offsetX,d*camera.offsetY);
-  for(const stroke of strokes){const points=stroke.points;if(!points.length)continue;ctx.strokeStyle='#282d23';ctx.lineWidth=4.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(const p of points.slice(1))ctx.lineTo(p.x,p.y);if(points.length===1)ctx.lineTo(points[0].x+.1,points[0].y);ctx.stroke();}
-  if(selection){ctx.save();ctx.strokeStyle='#86a75f';ctx.lineWidth=2.5;ctx.fillStyle='#b5d08f18';ctx.setLineDash(selectedIds.length?[9,7]:[6,6]);ctx.fillRect(selection.left,selection.top,selection.width,selection.height);ctx.strokeRect(selection.left,selection.top,selection.width,selection.height);ctx.restore();}
+  canvasRenderer.draw(strokes,selection,selectedIds.length>0);
   $('writing-hint').hidden=phase!=='guided'||strokes.length>0;
   $('empty-state').hidden=images.length>0||strokes.length>0;
 }
 function syncImageAliases(){const item=images.find(item=>item.id===selectedImageId)||images.at(-1);imageRect=item?.rect||null;placedImage=item?.image||null;imageObjectURL=item?.objectURL?item.src:null;imageSelected=!!selectedImageId;}
-function positionImage(){for(const item of images){const p=screen(item.rect);Object.assign(item.card.style,{left:p.x+'px',top:p.y+'px',width:item.rect.width*camera.scale+'px',height:item.rect.height*camera.scale+'px'});}}
+function positionImage(){referenceLayer.layout(images);}
 function positionCheck(){
   const button=$('selection-check');button.hidden=true;
   let box;
@@ -68,17 +315,16 @@ function positionCheck(){
 }
 function selectImage(selected,id=selectedImageId||images.at(-1)?.id){
   selectedImageId=selected&&images.some(item=>item.id===id)?id:null;syncImageAliases();
-  for(const item of images){const active=item.id===selectedImageId;item.card.classList.toggle('selected',active);item.card.setAttribute('aria-pressed',String(active));}
+  referenceLayer.select(images,selectedImageId);
   if(selectedImageId){selection=null;selectedIds=[];render();}positionCheck();
 }
 function setTool(next){
-  if(!['move','pen','box','eraser'].includes(next))return;
-  // Tools change only through an explicit toolbar/shortcut action, never on pen-up.
+  if(!Object.hasOwn(TOOL_DEFINITIONS,next))return;
   cancelInteraction();
   tool=next;document.body.dataset.tool=next;document.querySelectorAll('button[data-tool]').forEach(b=>{const active=b.dataset.tool===next;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   clearSelection();
-  $('tool-hint').textContent={move:'Drag blank space to pan. Drag or resize any image.',pen:'Pen stays on. Pinch to zoom; choose Box only when finished.',box:'Drag a box fully around your handwritten step.',eraser:'Drag across a stroke to erase it.'}[next];
-  canvas.style.cursor=next==='pen'?'crosshair':next==='eraser'?'cell':next==='box'?'crosshair':'grab';
+  $('tool-hint').textContent=TOOL_DEFINITIONS[next].hint;
+  canvas.style.cursor=TOOL_DEFINITIONS[next].cursor;
 }
 function clearSelection(){selection=null;selectedIds=[];selectImage(false);$('selection-help').hidden=true;render();}
 function cancelLoading(){generation++;for(const timer of loadingTimers)clearTimeout(timer);loadingTimers=[];setBusy(false);}
@@ -98,13 +344,7 @@ function resetFlow(){
   $('story-panel').hidden=true;$('phase-caption').textContent='01 / PLACE YOUR PROBLEM';setTool('move');render();resize();
 }
 function createImageCard(item){
-  const first=images.length===0,card=first?$('image-card'):document.createElement('div');
-  const img=first?$('problem-image'):document.createElement('img'),handle=first?$('resize-image'):document.createElement('button');
-  card.classList.add('image-card');card.dataset.imageId=item.id;card.tabIndex=0;card.setAttribute('role','button');card.setAttribute('aria-label','Inserted image. Use Move to reposition or resize.');
-  img.classList.add('problem-image');img.src=item.src;img.alt='Your inserted problem image';img.draggable=false;
-  handle.classList.add('resize-image');handle.setAttribute('aria-label','Resize this image');handle.textContent='↘';
-  if(!first){card.append(img,handle);surface.append(card);}
-  card.hidden=false;item.card=card;item.img=img;item.handle=handle;
+  referenceLayer.mount(item,images.length===0);
 }
 async function placeImage(src,{objectURL=false,version=imageLoadVersion}={}){
   if(version!==imageLoadVersion){if(objectURL)URL.revokeObjectURL(src);return;}
@@ -117,17 +357,16 @@ async function placeImage(src,{objectURL=false,version=imageLoadVersion}={}){
     const fit=Math.min(1,viewport.width*.72/image.naturalWidth,viewport.height*.6/image.naturalHeight)/camera.scale;
     const width=image.naturalWidth*fit,height=image.naturalHeight*fit,item={id:`image-${++serial}`,rect:{x:center.x-width/2,y:center.y-height/2,width,height},image,src,objectURL};
     createImageCard(item);images.push(item);$('empty-state').hidden=true;
-    // Adding a reference never clears other images, handwriting, or lesson progress.
     setTool('move');selectImage(true,item.id);redraw();
     toast('Image added. Drag it anywhere with Move; use the corner to resize.');
   }catch(error){if(objectURL)URL.revokeObjectURL(src);if(version===imageLoadVersion)toast(error.message);}
 }
 function upload(file){if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('Choose a PNG, JPG or WebP image.');return;}if(file.size>12*1024*1024){toast('Choose an image smaller than 12 MB.');return;}placeImage(URL.createObjectURL(file),{objectURL:true,version:imageLoadVersion});}
 
-function capturePointer(owner,id){try{owner.setPointerCapture(id);}catch{/* Window-level end handlers cover browsers that decline capture. */}}
+function capturePointer(owner,id){try{owner.setPointerCapture(id);}catch{}}
 function releasePointer(active){
   const owner=active.owner||(['image','resize'].includes(active.kind)?$('image-card'):canvas);
-  try{if(owner.hasPointerCapture(active.id))owner.releasePointerCapture(active.id);}catch{/* Capture may already have been lost. */}
+  try{if(owner.hasPointerCapture(active.id))owner.releasePointerCapture(active.id);}catch{}
 }
 function cancelPointer(){if(pointer)finishPointer({pointerId:pointer.id,type:'cancel'});}
 function cancelInteraction(){
@@ -143,8 +382,6 @@ function rollbackTouchAction(){
 function canStartPointer(event){
   if(event.button!==0||event.isPrimary===false)return false;
   if(pointer){
-    // Pencil has priority over a palm/finger, and each new primary Pencil down
-    // starts a fresh stroke even when Safari changed IDs after losing an end.
     if(event.pointerType==='pen'){
       if(pointer.pointerType==='touch')rollbackTouchAction();else cancelPointer();
       cancelInteraction();
@@ -177,7 +414,6 @@ function movePinch(){
   camera.offsetX=center.x-pinch.anchor.x*camera.scale;camera.offsetY=center.y-pinch.anchor.y*camera.scale;redraw();
 }
 function pointerDown(event){
-  // Suppress browser selection even for rejected palm/secondary contacts.
   if(event.cancelable!==false)event.preventDefault();clearNativeSelection();
   if(busy)return;
   const card=event.target.closest?.('.image-card'),item=images.find(item=>item.card===card),owner=card||canvas;
@@ -251,20 +487,40 @@ function finishPointer(event){
   }
   redraw();
 }
-surface.addEventListener('pointerdown',pointerDown,{passive:false});surface.addEventListener('pointermove',pointerMove,{passive:false});
-for(const name of ['pointerup','pointercancel','lostpointercapture'])surface.addEventListener(name,finishPointer);
-// Recover even when a lift/cancel happens outside the canvas or Safari loses capture.
-for(const name of ['pointerup','pointercancel'])window.addEventListener(name,finishPointer,true);
-window.addEventListener('pointermove',event=>{if(!surface.contains(event.target))pointerMove(event);},{passive:false});
-window.addEventListener('blur',cancelInteraction);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelInteraction();});
-document.addEventListener('selectionchange',clearNativeSelection);
-for(const name of ['touchstart','touchmove','touchend','touchcancel'])surface.addEventListener(name,event=>{if(event.cancelable!==false)event.preventDefault();clearNativeSelection();},{passive:false});
-for(const name of ['contextmenu','dragstart','selectstart','dblclick'])surface.addEventListener(name,event=>{
-  if(!editableTarget(event.target))event.preventDefault();
-});
-surface.addEventListener('wheel',event=>{event.preventDefault();cancelInteraction();zoomAt(camera.scale*Math.exp(-event.deltaY*.0015),local(event));},{passive:false});
-surface.addEventListener('keydown',event=>{const card=event.target.closest?.('.image-card'),item=images.find(item=>item.card===card);if(item&&(event.key==='Enter'||event.key===' ')){event.preventDefault();setTool('move');selectImage(true,item.id);}});
+eventBindings
+  .listen(surface, 'pointerdown', pointerDown, { passive: false })
+  .listen(surface, 'pointermove', pointerMove, { passive: false })
+  .listen(surface, ['pointerup', 'pointercancel', 'lostpointercapture'], finishPointer)
+  .listen(window, ['pointerup', 'pointercancel'], finishPointer, true)
+  .listen(window, 'pointermove', event => {
+    if (!surface.contains(event.target)) pointerMove(event);
+  }, { passive: false })
+  .listen(window, 'blur', cancelInteraction)
+  .listen(document, 'visibilitychange', () => {
+    if (document.hidden) cancelInteraction();
+  })
+  .listen(document, 'selectionchange', clearNativeSelection)
+  .listen(surface, ['touchstart', 'touchmove', 'touchend', 'touchcancel'], event => {
+    if (event.cancelable !== false) event.preventDefault();
+    clearNativeSelection();
+  }, { passive: false })
+  .listen(surface, ['contextmenu', 'dragstart', 'selectstart', 'dblclick'], event => {
+    if (!editableTarget(event.target)) event.preventDefault();
+  })
+  .listen(surface, 'wheel', event => {
+    event.preventDefault();
+    cancelInteraction();
+    zoomAt(camera.scale * Math.exp(-event.deltaY * .0015), local(event));
+  }, { passive: false })
+  .listen(surface, 'keydown', event => {
+    const card = event.target.closest?.('.image-card');
+    const item = images.find(item => item.card === card);
+    if (item && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      setTool('move');
+      selectImage(true, item.id);
+    }
+  });
 
 function checkImage(){
   if(!imageRect||busy)return;phase='reviewing';selectImage(false);$('phase-caption').textContent='02 / UNDERSTAND THE PROBLEM';
@@ -294,7 +550,6 @@ function renderStep(){
 }
 function startGuidance(){
   if(!['offer','clip'].includes(phase))return;simulation?.pause();phase='guided';$('guidance-offer').hidden=true;$('guidance-card').hidden=false;
-  // References stay exactly where the user put them on the unbounded board.
   renderStep();render();$('guidance-card').scrollIntoView({block:'nearest',behavior:'smooth'});toast('Handwrite the formula. Then choose Box step and draw a rectangle around it.');
 }
 function checkInk(){
@@ -322,32 +577,120 @@ function nextStep(){
 function restart(){
   if((images.length||strokes.length||phase!=='place')&&!confirm('Restart with a blank board? This clears all images and handwriting.'))return;
   imageLoadVersion++;resetFlow();
-  for(const item of images){if(item.objectURL)URL.revokeObjectURL(item.src);if(item.card!==$('image-card'))item.card.remove();}
+  referenceLayer.dispose(images);
   images=[];selectedImageId=null;syncImageAliases();
   $('problem-image').removeAttribute('src');$('image-card').hidden=true;$('empty-state').hidden=false;initialCamera();redraw();
   toast('Blank board ready. Use Add image to insert your problem.');
 }
 
-$('add-image').onclick=$('empty-upload').onclick=()=>$('image-input').click();
-$('image-input').onchange=event=>{for(const file of event.target.files)upload(file);event.target.value='';};
-document.addEventListener('paste',event=>{if(document.querySelector('dialog[open]'))return;const file=[...event.clipboardData?.items||[]].find(i=>i.kind==='file'&&i.type.startsWith('image/'))?.getAsFile();if(file){event.preventDefault();upload(file);}});
-board.addEventListener('dragover',event=>event.preventDefault());board.addEventListener('drop',event=>{event.preventDefault();for(const file of event.dataTransfer.files)upload(file);});
-document.querySelectorAll('button[data-tool]').forEach(button=>button.onclick=event=>{if(event?.target&&event.target.closest('button[data-tool]')!==button)return;setTool(button.dataset.tool);});
-$('zoom-in').onclick=()=>{cancelInteraction();zoomAt(camera.scale*1.25);};$('zoom-out').onclick=()=>{cancelInteraction();zoomAt(camera.scale/1.25);};
-$('zoom-reset').onclick=resetZoom;$('fit-content').onclick=fitContent;
-$('choose-box').onclick=()=>{setTool('box');board.scrollIntoView({block:'start',behavior:'smooth'});toast('Drag a box around the whole handwritten step.');};
-$('selection-check').onclick=()=>imageSelected?checkImage():checkInk();$('visualize').onclick=visualize;$('start-guidance').onclick=startGuidance;$('next-step').onclick=nextStep;
-$('restart').onclick=restart;$('run-again').onclick=restart;
-$('play-video').onclick=()=>{if(!simulation)return;simulation.playing?simulation.pause():simulation.play();};$('replay-video').onclick=()=>simulation?.replay();
-$('video-timeline').oninput=event=>{simulation?.seek(Number(event.target.value)/1000);if(Number(event.target.value)===1000)offerGuidance();};
-$('undo').onclick=()=>{if(busy||!history.length)return;cancelInteraction();strokes=history.pop();clearSelection();render();};
-$('clear-ink').onclick=()=>{if(!strokes.length||busy)return;if(!confirm('Clear the handwriting? You can undo this.'))return;cancelInteraction();checkpoint();strokes=[];clearSelection();render();};
-$('about').onclick=()=>$('about-dialog').showModal();$('close-about').onclick=()=>$('about-dialog').close();
-document.addEventListener('keydown',event=>{
-  if(event.defaultPrevented||event.isComposing||event.repeat||event.altKey||document.querySelector('dialog[open]')||editableTarget(event.target))return;
-  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();cancelInteraction();$('undo').click();}
-  else if(event.key==='Escape'){cancelInteraction();clearSelection();}
-  else if(!event.ctrlKey&&!event.metaKey){const mode={p:'pen',b:'box',m:'move',e:'eraser'}[event.key.toLowerCase()];if(mode){event.preventDefault();setTool(mode);}}
+const openImagePicker = () => $('image-input').click();
+
+eventBindings.actions({
+  'add-image': openImagePicker,
+  'empty-upload': openImagePicker,
+  'zoom-in': () => {
+    cancelInteraction();
+    zoomAt(camera.scale * 1.25);
+  },
+  'zoom-out': () => {
+    cancelInteraction();
+    zoomAt(camera.scale / 1.25);
+  },
+  'zoom-reset': resetZoom,
+  'fit-content': fitContent,
+  'choose-box': () => {
+    setTool('box');
+    board.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    toast('Drag a box around the whole handwritten step.');
+  },
+  'selection-check': () => imageSelected ? checkImage() : checkInk(),
+  'visualize': visualize,
+  'start-guidance': startGuidance,
+  'next-step': nextStep,
+  'restart': restart,
+  'run-again': restart,
+  'play-video': () => {
+    if (!simulation) return;
+    simulation.playing ? simulation.pause() : simulation.play();
+  },
+  'replay-video': () => simulation?.replay(),
+  'undo': () => {
+    if (busy || !history.length) return;
+    cancelInteraction();
+    strokes = history.pop();
+    clearSelection();
+    render();
+  },
+  'clear-ink': () => {
+    if (!strokes.length || busy) return;
+    if (!confirm('Clear the handwriting? You can undo this.')) return;
+    cancelInteraction();
+    checkpoint();
+    strokes = [];
+    clearSelection();
+    render();
+  },
+  'about': () => $('about-dialog').showModal(),
+  'close-about': () => $('about-dialog').close(),
 });
-window.addEventListener('pagehide',()=>{cancelInteraction();simulation?.pause();});
-canvas.tabIndex=0;canvas.setAttribute('contenteditable','false');new ResizeObserver(resize).observe(surface);setTool('move');resize();
+
+$('image-input').onchange = event => {
+  for (const file of event.target.files) upload(file);
+  event.target.value = '';
+};
+
+$('video-timeline').oninput = event => {
+  simulation?.seek(Number(event.target.value) / 1000);
+  if (Number(event.target.value) === 1000) offerGuidance();
+};
+
+document.querySelectorAll('button[data-tool]').forEach(button => {
+  button.onclick = event => {
+    if (event?.target && event.target.closest('button[data-tool]') !== button) return;
+    setTool(button.dataset.tool);
+  };
+});
+
+eventBindings
+  .listen(document, 'paste', event => {
+    if (document.querySelector('dialog[open]')) return;
+    const file = [...event.clipboardData?.items || []]
+      .find(item => item.kind === 'file' && item.type.startsWith('image/'))?.getAsFile();
+    if (file) {
+      event.preventDefault();
+      upload(file);
+    }
+  })
+  .listen(board, 'dragover', event => event.preventDefault())
+  .listen(board, 'drop', event => {
+    event.preventDefault();
+    for (const file of event.dataTransfer.files) upload(file);
+  })
+  .listen(document, 'keydown', event => {
+    if (event.defaultPrevented || event.isComposing || event.repeat || event.altKey ||
+        document.querySelector('dialog[open]') || editableTarget(event.target)) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      cancelInteraction();
+      $('undo').click();
+    } else if (event.key === 'Escape') {
+      cancelInteraction();
+      clearSelection();
+    } else if (!event.ctrlKey && !event.metaKey) {
+      const mode = TOOL_SHORTCUTS[event.key.toLowerCase()];
+      if (mode) {
+        event.preventDefault();
+        setTool(mode);
+      }
+    }
+  })
+  .listen(window, 'pagehide', () => {
+    cancelInteraction();
+    simulation?.pause();
+  });
+
+canvas.tabIndex = 0;
+canvas.setAttribute('contenteditable', 'false');
+new ResizeObserver(resize).observe(surface);
+setTool('move');
+resize();
