@@ -2,26 +2,55 @@ import {DEMO_STEPS,normaliseBox,selectInkIds} from './demo-model.js';
 import {DemoSimulation} from './demo-simulation.js?v=motorcycle-ink-2';
 
 const $=id=>document.getElementById(id), W=1400,H=1000;
-const canvas=$('ink-canvas'),ctx=canvas.getContext('2d'),board=$('board');
+const canvas=$('ink-canvas'),ctx=canvas.getContext('2d'),board=$('board'),surface=$('canvas-viewport')||board;
 let tool='move',strokes=[],history=[],imageRect=null,imageSelected=false,imageObjectURL=null,placedImage=null;
-let selectedIds=[],selection=null,pointer=null,scale=1,offsetX=0,offsetY=0,serial=0;
+let selectedIds=[],selection=null,pointer=null,serial=0,images=[],selectedImageId=null;
+const camera={scale:1,offsetX:0,offsetY:0},viewport={width:0,height:0},touches=new Map();
+let cameraReady=false,pinch=null,touchNavigation=false,lastPenTime=-Infinity;
 let phase='place',stepIndex=0,stepChecked=false,checkedIds=new Set(),busy=false,generation=0,simulation=null;
 let toastTimer,loadingTimers=[],imageLoadVersion=0;
 // No image is created, loaded, or placed until the user inserts one.
 
 function toast(message){clearTimeout(toastTimer);$('toast').textContent=message;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
-function world(event){const r=canvas.getBoundingClientRect();return {x:clamp((event.clientX-r.left-offsetX)/scale,0,W),y:clamp((event.clientY-r.top-offsetY)/scale,0,H)};}
-function screen(p){return {x:p.x*scale+offsetX,y:p.y*scale+offsetY+canvas.offsetTop};}
+function local(event){const r=canvas.getBoundingClientRect();return {x:event.clientX-r.left,y:event.clientY-r.top};}
+function localToWorld(p){return {x:(p.x-camera.offsetX)/camera.scale,y:(p.y-camera.offsetY)/camera.scale};}
+function world(event){return localToWorld(local(event));}
+function screen(p){return {x:p.x*camera.scale+camera.offsetX,y:p.y*camera.scale+camera.offsetY};}
 function checkpoint(){history.push(structuredClone(strokes));if(history.length>40)history.shift();}
-function resize(){const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(r.width*d);canvas.height=Math.round(r.height*d);scale=Math.min(r.width/W,r.height/H);offsetX=(r.width-W*scale)/2;offsetY=(r.height-H*scale)/2;render();positionImage();positionCheck();}
+function redraw(){render();positionImage();positionCheck();if($('zoom-level')){const percent=camera.scale*100;$('zoom-level').textContent=`${percent<1?percent.toFixed(2):percent<10?percent.toFixed(1):Math.round(percent)}%`;}}
+function initialCamera(){camera.scale=clamp(Math.min(viewport.width/W,viewport.height/H),.15,4);camera.offsetX=(viewport.width-W*camera.scale)/2;camera.offsetY=(viewport.height-H*camera.scale)/2;cameraReady=true;}
+function resize(){
+  const r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2),center=cameraReady?localToWorld({x:viewport.width/2,y:viewport.height/2}):null;
+  viewport.width=Math.max(1,r.width);viewport.height=Math.max(1,r.height);canvas.width=Math.round(viewport.width*d);canvas.height=Math.round(viewport.height*d);
+  if(!cameraReady)initialCamera();else{camera.offsetX=viewport.width/2-center.x*camera.scale;camera.offsetY=viewport.height/2-center.y*camera.scale;}
+  redraw();
+}
+function zoomAt(nextScale,anchor={x:viewport.width/2,y:viewport.height/2}){
+  const fixed=localToWorld(anchor);camera.scale=clamp(nextScale,camera.scale<.15?.0001:.15,4);camera.offsetX=anchor.x-fixed.x*camera.scale;camera.offsetY=anchor.y-fixed.y*camera.scale;redraw();
+}
+function resetZoom(){cancelInteraction();zoomAt(1);}
+function fitContent(){
+  cancelInteraction();let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
+  const include=(x,y)=>{left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);};
+  for(const item of images){include(item.rect.x,item.rect.y);include(item.rect.x+item.rect.width,item.rect.y+item.rect.height);}
+  for(const stroke of strokes)for(const p of stroke.points)include(p.x,p.y);
+  if(!Number.isFinite(left)){initialCamera();redraw();return;}
+  const fitScale=Math.min(Math.max(1,viewport.width-100)/Math.max(80,right-left),Math.max(1,viewport.height-100)/Math.max(80,bottom-top));
+  camera.scale=clamp(fitScale,.0001,4);
+  if(fitScale<.0001)toast('These items are extremely far apart. Use Move to pan between regions.');
+  camera.offsetX=viewport.width/2-(left+right)/2*camera.scale;camera.offsetY=viewport.height/2-(top+bottom)/2*camera.scale;redraw();
+}
+const fitView=fitContent,resetView=resetZoom;
 function render(){
-  const d=Math.min(devicePixelRatio||1,2);ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.setTransform(d*scale,0,0,d*scale,d*offsetX,d*offsetY);
+  const d=Math.min(devicePixelRatio||1,2);ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.setTransform(d*camera.scale,0,0,d*camera.scale,d*camera.offsetX,d*camera.offsetY);
   for(const stroke of strokes){const points=stroke.points;if(!points.length)continue;ctx.strokeStyle='#282d23';ctx.lineWidth=4.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(const p of points.slice(1))ctx.lineTo(p.x,p.y);if(points.length===1)ctx.lineTo(points[0].x+.1,points[0].y);ctx.stroke();}
   if(selection){ctx.save();ctx.strokeStyle='#86a75f';ctx.lineWidth=2.5;ctx.fillStyle='#b5d08f18';ctx.setLineDash(selectedIds.length?[9,7]:[6,6]);ctx.fillRect(selection.left,selection.top,selection.width,selection.height);ctx.strokeRect(selection.left,selection.top,selection.width,selection.height);ctx.restore();}
   $('writing-hint').hidden=phase!=='guided'||strokes.length>0;
+  $('empty-state').hidden=images.length>0||strokes.length>0;
 }
-function positionImage(){if(!imageRect)return;const p=screen({x:imageRect.x,y:imageRect.y});Object.assign($('image-card').style,{left:p.x+'px',top:p.y+'px',width:imageRect.width*scale+'px',height:imageRect.height*scale+'px'});}
+function syncImageAliases(){const item=images.find(item=>item.id===selectedImageId)||images.at(-1);imageRect=item?.rect||null;placedImage=item?.image||null;imageObjectURL=item?.objectURL?item.src:null;imageSelected=!!selectedImageId;}
+function positionImage(){for(const item of images){const p=screen(item.rect);Object.assign(item.card.style,{left:p.x+'px',top:p.y+'px',width:item.rect.width*camera.scale+'px',height:item.rect.height*camera.scale+'px'});}}
 function positionCheck(){
   const button=$('selection-check');button.hidden=true;
   let box;
@@ -29,25 +58,31 @@ function positionCheck(){
   if(imageSelected&&imageRect&&['place','overview'].includes(phase))box={left:imageRect.x,top:imageRect.y,right:imageRect.x+imageRect.width,bottom:imageRect.y+imageRect.height};
   else if(phase==='guided'&&!stepChecked&&selection&&selectedIds.length)box=selection;
   else return;
-  const edge=screen({x:box.right,y:(box.top+box.bottom)/2}),below=screen({x:(box.left+box.right)/2,y:box.bottom});
-  const width=board.clientWidth,maxY=canvas.offsetTop+canvas.clientHeight-48;
+  const edge=screen({x:box.right,y:(box.top+box.bottom)/2}),below=screen({x:(box.left+box.right)/2,y:box.bottom}),surfaceX=surface.offsetLeft||0,surfaceY=surface.offsetTop||0;
+  if(edge.x<-90||screen({x:box.left,y:box.top}).x>viewport.width||below.y<0||screen({x:box.left,y:box.top}).y>viewport.height)return;
+  edge.x+=surfaceX;edge.y+=surfaceY;below.x+=surfaceX;below.y+=surfaceY;
+  const width=board.clientWidth,maxY=surfaceY+viewport.height-48;
   const side=edge.x+100<width;button.classList.toggle('side',side);
   button.style.left=`${clamp(side?edge.x+14:below.x-44,8,width-98)}px`;
   button.style.top=`${clamp(side?edge.y-19:below.y+16,65,maxY)}px`;button.hidden=false;
 }
-function selectImage(selected){imageSelected=selected;$('image-card').classList.toggle('selected',selected);$('image-card').setAttribute('aria-pressed',String(selected));if(selected){selection=null;selectedIds=[];render();}positionCheck();}
+function selectImage(selected,id=selectedImageId||images.at(-1)?.id){
+  selectedImageId=selected&&images.some(item=>item.id===id)?id:null;syncImageAliases();
+  for(const item of images){const active=item.id===selectedImageId;item.card.classList.toggle('selected',active);item.card.setAttribute('aria-pressed',String(active));}
+  if(selectedImageId){selection=null;selectedIds=[];render();}positionCheck();
+}
 function setTool(next){
   if(!['move','pen','box','eraser'].includes(next))return;
   // Tools change only through an explicit toolbar/shortcut action, never on pen-up.
-  cancelPointer();
+  cancelInteraction();
   tool=next;document.body.dataset.tool=next;document.querySelectorAll('button[data-tool]').forEach(b=>{const active=b.dataset.tool===next;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   clearSelection();
-  $('tool-hint').textContent={move:'Drag or resize the image. Click it to select.',pen:'Pen stays on. Finish writing, then choose Box step.',box:'Drag a box fully around your new handwritten step.',eraser:'Drag across a stroke to erase it.'}[next];
-  canvas.style.cursor=next==='pen'?'crosshair':next==='eraser'?'cell':next==='box'?'crosshair':'default';
+  $('tool-hint').textContent={move:'Drag blank space to pan. Drag or resize any image.',pen:'Pen stays on. Pinch to zoom; choose Box only when finished.',box:'Drag a box fully around your handwritten step.',eraser:'Drag across a stroke to erase it.'}[next];
+  canvas.style.cursor=next==='pen'?'crosshair':next==='eraser'?'cell':next==='box'?'crosshair':'grab';
 }
 function clearSelection(){selection=null;selectedIds=[];selectImage(false);$('selection-help').hidden=true;render();}
 function cancelLoading(){generation++;for(const timer of loadingTimers)clearTimeout(timer);loadingTimers=[];setBusy(false);}
-function setBusy(value){busy=value;for(const id of ['visualize','selection-check','next-step'])$(id).disabled=value;positionCheck();}
+function setBusy(value){if(value)cancelInteraction();busy=value;for(const id of ['visualize','selection-check','next-step'])$(id).disabled=value;positionCheck();}
 function panel(){ $('story-panel').hidden=false;resize(); }
 function loading(title,copy,duration,done){
   cancelLoading();const version=generation;setBusy(true);panel();
@@ -57,84 +92,152 @@ function loading(title,copy,duration,done){
 }
 function scrollPanel(){if(matchMedia('(max-width:760px)').matches)$('story-panel').scrollIntoView({block:'start',behavior:'smooth'});else $('story-panel').scrollTop=0;}
 function resetFlow(){
-  cancelPointer();
+  cancelInteraction();
   cancelLoading();simulation?.destroy();simulation=null;strokes=[];history=[];checkedIds=new Set();stepIndex=0;stepChecked=false;phase='place';clearSelection();
   for(const id of ['loading-card','overview-card','video-card','guidance-offer','guidance-card','complete-card','step-feedback','next-step'])$(id).hidden=true;
   $('story-panel').hidden=true;$('phase-caption').textContent='01 / PLACE YOUR PROBLEM';setTool('move');render();resize();
 }
-async function placeImage(src,{objectURL=false,version=++imageLoadVersion}={}){
+function createImageCard(item){
+  const first=images.length===0,card=first?$('image-card'):document.createElement('div');
+  const img=first?$('problem-image'):document.createElement('img'),handle=first?$('resize-image'):document.createElement('button');
+  card.classList.add('image-card');card.dataset.imageId=item.id;card.tabIndex=0;card.setAttribute('role','button');card.setAttribute('aria-label','Inserted image. Use Move to reposition or resize.');
+  img.classList.add('problem-image');img.src=item.src;img.alt='Your inserted problem image';img.draggable=false;
+  handle.classList.add('resize-image');handle.setAttribute('aria-label','Resize this image');handle.textContent='↘';
+  if(!first){card.append(img,handle);surface.append(card);}
+  card.hidden=false;item.card=card;item.img=img;item.handle=handle;
+}
+async function placeImage(src,{objectURL=false,version=imageLoadVersion}={}){
   if(version!==imageLoadVersion){if(objectURL)URL.revokeObjectURL(src);return;}
   const image=new Image();
   try{
     await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('That image could not be opened. Use a PNG, JPG or WebP image.'));image.src=src;});
     if(version!==imageLoadVersion){if(objectURL)URL.revokeObjectURL(src);return;}
     if(image.naturalWidth*image.naturalHeight>24000000)throw new Error('Use an image smaller than 24 megapixels.');
-    if(imageObjectURL)URL.revokeObjectURL(imageObjectURL);imageObjectURL=objectURL?src:null;
-    resetFlow();placedImage=image;$('problem-image').src=src;$('image-card').hidden=false;$('empty-state').hidden=true;
-    const width=Math.min(1020,750*image.naturalWidth/image.naturalHeight),height=width*image.naturalHeight/image.naturalWidth;
-    imageRect={x:(W-width)/2,y:100,width,height};positionImage();selectImage(false);
-    toast('Image placed. Drag it with Move, then click it and tap Check.');
+    const center=localToWorld({x:viewport.width/2,y:viewport.height/2});
+    const fit=Math.min(1,viewport.width*.72/image.naturalWidth,viewport.height*.6/image.naturalHeight)/camera.scale;
+    const width=image.naturalWidth*fit,height=image.naturalHeight*fit,item={id:`image-${++serial}`,rect:{x:center.x-width/2,y:center.y-height/2,width,height},image,src,objectURL};
+    createImageCard(item);images.push(item);$('empty-state').hidden=true;
+    // Adding a reference never clears other images, handwriting, or lesson progress.
+    setTool('move');selectImage(true,item.id);redraw();
+    toast('Image added. Drag it anywhere with Move; use the corner to resize.');
   }catch(error){if(objectURL)URL.revokeObjectURL(src);if(version===imageLoadVersion)toast(error.message);}
 }
-function upload(file){if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('Choose a PNG, JPG or WebP image.');return;}if(file.size>12*1024*1024){toast('Choose an image smaller than 12 MB.');return;}const version=++imageLoadVersion;placeImage(URL.createObjectURL(file),{objectURL:true,version});}
+function upload(file){if(!file)return;if(!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('Choose a PNG, JPG or WebP image.');return;}if(file.size>12*1024*1024){toast('Choose an image smaller than 12 MB.');return;}placeImage(URL.createObjectURL(file),{objectURL:true,version:imageLoadVersion});}
 
 function capturePointer(owner,id){try{owner.setPointerCapture(id);}catch{/* Window-level end handlers cover browsers that decline capture. */}}
 function releasePointer(active){
-  const owner=['image','resize'].includes(active.kind)?$('image-card'):canvas;
+  const owner=active.owner||(['image','resize'].includes(active.kind)?$('image-card'):canvas);
   try{if(owner.hasPointerCapture(active.id))owner.releasePointerCapture(active.id);}catch{/* Capture may already have been lost. */}
 }
 function cancelPointer(){if(pointer)finishPointer({pointerId:pointer.id,type:'cancel'});}
+function cancelInteraction(){
+  const activeTouches=[...touches.entries()];touches.clear();pinch=null;touchNavigation=false;cancelPointer();
+  for(const [id,touch] of activeTouches)releasePointer({id,owner:touch.owner});
+}
+function rollbackTouchAction(){
+  if(!pointer||pointer.pointerType!=='touch')return;
+  if(pointer.before){strokes=pointer.before;history=pointer.historyBefore||history.slice(0,pointer.historyLength);}
+  if(pointer.kind==='box'){selection=null;selectedIds=[];}
+  pointer=null;
+}
 function canStartPointer(event){
   if(event.button!==0||event.isPrimary===false)return false;
   if(pointer){
-    // A fresh primary down with the same ID means its previous end was missed.
-    // A second finger/palm must never replace the active Pencil stroke.
-    if(event.pointerId!==pointer.id||event.pointerType!==pointer.pointerType)return false;
-    cancelPointer();
+    // Pencil has priority over a palm/finger, and each new primary Pencil down
+    // starts a fresh stroke even when Safari changed IDs after losing an end.
+    if(event.pointerType==='pen'){
+      if(pointer.pointerType==='touch')rollbackTouchAction();else cancelPointer();
+      cancelInteraction();
+    }else{
+      if(event.pointerId!==pointer.id||event.pointerType!==pointer.pointerType)return false;
+      cancelPointer();
+    }
   }
   return true;
 }
+function editableTarget(node){const element=node?.nodeType===3?node.parentElement:node;return !!(element?.isContentEditable||element?.closest?.('input,textarea,select'));}
 function clearNativeSelection(){
   const native=window.getSelection?.();
-  if(native&&(board.contains(native.anchorNode)||board.contains(native.focusNode)))native.removeAllRanges();
+  if(native&&!editableTarget(native.anchorNode)&&!editableTarget(native.focusNode)&&(board.contains(native.anchorNode)||board.contains(native.focusNode)))native.removeAllRanges();
 }
-$('image-card').addEventListener('pointerdown',event=>{
-  if(tool!=='move'||busy||!imageRect||!canStartPointer(event))return;event.preventDefault();clearNativeSelection();selectImage(true);
-  const p=world(event),resizing=event.target===$('resize-image');pointer={id:event.pointerId,pointerType:event.pointerType,kind:resizing?'resize':'image',start:p,rect:{...imageRect}};capturePointer($('image-card'),event.pointerId);
-});
-$('image-card').addEventListener('pointermove',event=>{
-  if(!pointer||pointer.id!==event.pointerId||!['image','resize'].includes(pointer.kind))return;const p=world(event),r=pointer.rect;
-  if(pointer.kind==='image'){imageRect.x=clamp(r.x+p.x-pointer.start.x,0,W-r.width);imageRect.y=clamp(r.y+p.y-pointer.start.y,0,H-r.height);}
-  else{const aspect=r.height/r.width,maxWidth=Math.min(W-r.x,(H-r.y)/aspect);imageRect.width=clamp(r.width+p.x-pointer.start.x,Math.min(240,maxWidth),maxWidth);imageRect.height=imageRect.width*aspect;}
-  positionImage();positionCheck();
-});
-for(const name of ['pointerup','pointercancel','lostpointercapture'])$('image-card').addEventListener(name,finishPointer);
-$('image-card').addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setTool('move');selectImage(true);}});
-
 function erase(point){
-  strokes=strokes.filter(stroke=>!stroke.points.some(p=>Math.hypot(p.x-point.x,p.y-point.y)<22));
+  strokes=strokes.filter(stroke=>!stroke.points.some(p=>Math.hypot(p.x-point.x,p.y-point.y)<18/camera.scale));
   selectedIds=[];selection=null;positionCheck();render();
 }
-canvas.addEventListener('pointerdown',event=>{
-  if(busy||($('pencil-only').checked&&event.pointerType!=='pen')||!canStartPointer(event))return;
-  event.preventDefault();clearNativeSelection();canvas.focus({preventScroll:true});const p=world(event);selectImage(false);$('selection-help').hidden=true;
-  if(tool==='move'){clearSelection();return;}
-  pointer={id:event.pointerId,pointerType:event.pointerType,kind:tool,start:p};capturePointer(canvas,event.pointerId);
+function beginPan(event,owner=surface){pointer={id:event.pointerId,pointerType:event.pointerType,kind:'pan',owner,startLocal:local(event),offsetX:camera.offsetX,offsetY:camera.offsetY};capturePointer(owner,event.pointerId);}
+function beginPinch(){
+  const pair=[...touches.entries()].slice(0,2);if(pair.length<2)return;
+  rollbackTouchAction();touchNavigation=true;selection=null;selectedIds=[];
+  const [a,b]=pair.map(([,touch])=>touch),center={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+  pinch={ids:pair.map(([id])=>id),distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),scale:camera.scale,anchor:localToWorld(center)};redraw();
+}
+function movePinch(){
+  const [a,b]=pinch.ids.map(id=>touches.get(id));if(!a||!b)return;
+  const center={x:(a.x+b.x)/2,y:(a.y+b.y)/2};camera.scale=clamp(pinch.scale*Math.hypot(a.x-b.x,a.y-b.y)/pinch.distance,pinch.scale<.15?.0001:.15,4);
+  camera.offsetX=center.x-pinch.anchor.x*camera.scale;camera.offsetY=center.y-pinch.anchor.y*camera.scale;redraw();
+}
+function pointerDown(event){
+  // Suppress browser selection even for rejected palm/secondary contacts.
+  if(event.cancelable!==false)event.preventDefault();clearNativeSelection();
+  if(busy)return;
+  const card=event.target.closest?.('.image-card'),item=images.find(item=>item.card===card),owner=card||canvas;
+  if(event.pointerType==='touch'){
+    if(pointer?.pointerType==='pen'||Date.now()-lastPenTime<250)return;
+    if(pointer?.id===event.pointerId)cancelPointer();
+    touches.set(event.pointerId,{...local(event),owner});capturePointer(owner,event.pointerId);
+    if(touches.size>=2){beginPinch();return;}
+    if(touchNavigation){beginPan(event,owner);return;}
+  }
+  if(!canStartPointer(event))return;
+  if(event.pointerType==='pen'){lastPenTime=Date.now();if(touches.size||pinch)cancelInteraction();}
+  const p=world(event);$('selection-help').hidden=true;
+  if(item&&tool==='move'){
+    selectImage(true,item.id);const resizing=event.target.closest?.('.resize-image');
+    pointer={id:event.pointerId,pointerType:event.pointerType,kind:resizing?'resize':'image',owner:card,item,start:p,rect:{...item.rect}};capturePointer(card,event.pointerId);return;
+  }
+  selectImage(false);
+  if(tool==='move'||event.pointerType==='touch'&&$('pencil-only').checked){clearSelection();beginPan(event,owner);return;}
+  pointer={id:event.pointerId,pointerType:event.pointerType,kind:tool,owner,start:p};capturePointer(owner,event.pointerId);
   if(tool==='box'){selectedIds=[];selection=normaliseBox(p,p);}
-  else if(tool==='pen'){checkpoint();selection=null;selectedIds=[];const stroke={id:`ink-${++serial}`,type:'pen',points:[p]};strokes.push(stroke);pointer.stroke=stroke;}
-  else if(tool==='eraser'){checkpoint();erase(p);}
-  positionCheck();render();
-});
-canvas.addEventListener('pointermove',event=>{
-  if(pointer?.id!==event.pointerId)return;event.preventDefault();const p=world(event);
-  if(pointer.kind==='pen'){const coalesced=event.getCoalescedEvents?.(),events=coalesced?.length?coalesced:[event];for(const e of events)pointer.stroke.points.push(world(e));}
+  else if(tool==='pen'||tool==='eraser'){
+    pointer.historyLength=history.length;pointer.historyBefore=history.slice();checkpoint();pointer.before=history.at(-1);
+    if(tool==='pen'){selection=null;selectedIds=[];const stroke={id:`ink-${++serial}`,type:'pen',points:[p]};strokes.push(stroke);pointer.stroke=stroke;}
+    else erase(p);
+  }
+  redraw();
+}
+function pointerMove(event){
+  if(touches.has(event.pointerId)){const previous=touches.get(event.pointerId);touches.set(event.pointerId,{...previous,...local(event)});}
+  if(pinch){if(event.cancelable!==false)event.preventDefault();movePinch();return;}
+  if(pointer?.id!==event.pointerId)return;if(event.cancelable!==false)event.preventDefault();if(pointer.pointerType==='pen')clearNativeSelection();const p=world(event);
+  if(pointer.kind==='pan'){const at=local(event);camera.offsetX=pointer.offsetX+at.x-pointer.startLocal.x;camera.offsetY=pointer.offsetY+at.y-pointer.startLocal.y;}
+  else if(pointer.kind==='image'){pointer.item.rect.x=pointer.rect.x+p.x-pointer.start.x;pointer.item.rect.y=pointer.rect.y+p.y-pointer.start.y;}
+  else if(pointer.kind==='resize'){
+    const r=pointer.rect,aspect=r.height/r.width,dx=p.x-pointer.start.x,dy=p.y-pointer.start.y;
+    pointer.item.rect.width=Math.max(40,r.width+(dx+dy*aspect)/(1+aspect*aspect));pointer.item.rect.height=pointer.item.rect.width*aspect;
+  }
+  else if(pointer.kind==='pen'){const coalesced=event.getCoalescedEvents?.(),events=coalesced?.length?coalesced:[event];for(const e of events)pointer.stroke.points.push(world(e));}
   else if(pointer.kind==='box')selection=normaliseBox(pointer.start,p);
   else if(pointer.kind==='eraser')erase(p);
-  render();
-});
+  redraw();
+}
 function finishPointer(event){
+  const touch=touches.get(event.pointerId);
+  if(touch){
+    touches.delete(event.pointerId);
+    if(pinch||touchNavigation){
+      if(pointer?.id===event.pointerId)pointer=null;
+      pinch=null;releasePointer({id:event.pointerId,owner:touch.owner});
+      if(touches.size>=2)beginPinch();
+      else if(touches.size===1){
+        const [id,remaining]=[...touches.entries()][0];pointer={id,pointerType:'touch',kind:'pan',owner:remaining.owner,startLocal:{x:remaining.x,y:remaining.y},offsetX:camera.offsetX,offsetY:camera.offsetY};
+      }else touchNavigation=false;
+      redraw();return;
+    }
+  }
   if(pointer?.id!==event.pointerId)return;
   const active=pointer,wasBox=active.kind==='box',completed=event.type==='pointerup';pointer=null;releasePointer(active);
+  if(active.pointerType==='pen')lastPenTime=Date.now();
   if(completed&&Number.isFinite(event.clientX)&&Number.isFinite(event.clientY)){
     if(wasBox)selection=normaliseBox(active.start,world(event));
     else if(active.kind==='pen')active.stroke.points.push(world(event));
@@ -146,16 +249,22 @@ function finishPointer(event){
       $('selection-help').textContent=phase!=='guided'?'Start guidance after the visualization to check a handwritten step.':stepChecked?'Use Next step to continue the script.':selectedIds.length?'Step selected. Tap the black Check bubble.':'Include the whole handwritten step in the box. Previously checked ink is not selected again.';
     }else{selection=null;selectedIds=[];$('selection-help').hidden=true;}
   }
-  render();positionCheck();
+  redraw();
 }
-for(const name of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(name,finishPointer);
+surface.addEventListener('pointerdown',pointerDown,{passive:false});surface.addEventListener('pointermove',pointerMove,{passive:false});
+for(const name of ['pointerup','pointercancel','lostpointercapture'])surface.addEventListener(name,finishPointer);
 // Recover even when a lift/cancel happens outside the canvas or Safari loses capture.
 for(const name of ['pointerup','pointercancel'])window.addEventListener(name,finishPointer,true);
-window.addEventListener('blur',cancelPointer);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPointer();});
-for(const name of ['contextmenu','dragstart','selectstart'])board.addEventListener(name,event=>{
-  if(!event.target.closest?.('input,textarea,select,[contenteditable]'))event.preventDefault();
+window.addEventListener('pointermove',event=>{if(!surface.contains(event.target))pointerMove(event);},{passive:false});
+window.addEventListener('blur',cancelInteraction);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelInteraction();});
+document.addEventListener('selectionchange',clearNativeSelection);
+for(const name of ['touchstart','touchmove','touchend','touchcancel'])surface.addEventListener(name,event=>{if(event.cancelable!==false)event.preventDefault();clearNativeSelection();},{passive:false});
+for(const name of ['contextmenu','dragstart','selectstart','dblclick'])surface.addEventListener(name,event=>{
+  if(!editableTarget(event.target))event.preventDefault();
 });
+surface.addEventListener('wheel',event=>{event.preventDefault();cancelInteraction();zoomAt(camera.scale*Math.exp(-event.deltaY*.0015),local(event));},{passive:false});
+surface.addEventListener('keydown',event=>{const card=event.target.closest?.('.image-card'),item=images.find(item=>item.card===card);if(item&&(event.key==='Enter'||event.key===' ')){event.preventDefault();setTool('move');selectImage(true,item.id);}});
 
 function checkImage(){
   if(!imageRect||busy)return;phase='reviewing';selectImage(false);$('phase-caption').textContent='02 / UNDERSTAND THE PROBLEM';
@@ -185,8 +294,7 @@ function renderStep(){
 }
 function startGuidance(){
   if(!['offer','clip'].includes(phase))return;simulation?.pause();phase='guided';$('guidance-offer').hidden=true;$('guidance-card').hidden=false;
-  // Keep the reference nearby while opening enough white space for the student's ink.
-  if(imageRect){const aspect=imageRect.height/imageRect.width,width=Math.min(680,300/aspect);imageRect={x:70,y:30,width,height:width*aspect};positionImage();}
+  // References stay exactly where the user put them on the unbounded board.
   renderStep();render();$('guidance-card').scrollIntoView({block:'nearest',behavior:'smooth'});toast('Handwrite the formula. Then choose Box step and draw a rectangle around it.');
 }
 function checkInk(){
@@ -212,31 +320,34 @@ function nextStep(){
   else{phase='complete';$('guidance-card').hidden=true;$('complete-card').hidden=false;clearSelection();$('phase-caption').textContent='05 / DEMO COMPLETE';$('complete-card').scrollIntoView({block:'nearest',behavior:'smooth'});}
 }
 function restart(){
-  if((imageRect||strokes.length||phase!=='place')&&!confirm('Restart with a blank board? This clears the image and handwriting.'))return;
-  imageLoadVersion++;resetFlow();imageRect=null;placedImage=null;
-  if(imageObjectURL)URL.revokeObjectURL(imageObjectURL);imageObjectURL=null;
-  $('problem-image').removeAttribute('src');$('image-card').hidden=true;$('empty-state').hidden=false;positionCheck();
+  if((images.length||strokes.length||phase!=='place')&&!confirm('Restart with a blank board? This clears all images and handwriting.'))return;
+  imageLoadVersion++;resetFlow();
+  for(const item of images){if(item.objectURL)URL.revokeObjectURL(item.src);if(item.card!==$('image-card'))item.card.remove();}
+  images=[];selectedImageId=null;syncImageAliases();
+  $('problem-image').removeAttribute('src');$('image-card').hidden=true;$('empty-state').hidden=false;initialCamera();redraw();
   toast('Blank board ready. Use Add image to insert your problem.');
 }
 
 $('add-image').onclick=$('empty-upload').onclick=()=>$('image-input').click();
-$('image-input').onchange=event=>{upload(event.target.files[0]);event.target.value='';};
+$('image-input').onchange=event=>{for(const file of event.target.files)upload(file);event.target.value='';};
 document.addEventListener('paste',event=>{if(document.querySelector('dialog[open]'))return;const file=[...event.clipboardData?.items||[]].find(i=>i.kind==='file'&&i.type.startsWith('image/'))?.getAsFile();if(file){event.preventDefault();upload(file);}});
-board.addEventListener('dragover',event=>event.preventDefault());board.addEventListener('drop',event=>{event.preventDefault();upload(event.dataTransfer.files[0]);});
-document.querySelectorAll('button[data-tool]').forEach(button=>button.onclick=()=>setTool(button.dataset.tool));
+board.addEventListener('dragover',event=>event.preventDefault());board.addEventListener('drop',event=>{event.preventDefault();for(const file of event.dataTransfer.files)upload(file);});
+document.querySelectorAll('button[data-tool]').forEach(button=>button.onclick=event=>{if(event?.target&&event.target.closest('button[data-tool]')!==button)return;setTool(button.dataset.tool);});
+$('zoom-in').onclick=()=>{cancelInteraction();zoomAt(camera.scale*1.25);};$('zoom-out').onclick=()=>{cancelInteraction();zoomAt(camera.scale/1.25);};
+$('zoom-reset').onclick=resetZoom;$('fit-content').onclick=fitContent;
 $('choose-box').onclick=()=>{setTool('box');board.scrollIntoView({block:'start',behavior:'smooth'});toast('Drag a box around the whole handwritten step.');};
 $('selection-check').onclick=()=>imageSelected?checkImage():checkInk();$('visualize').onclick=visualize;$('start-guidance').onclick=startGuidance;$('next-step').onclick=nextStep;
 $('restart').onclick=restart;$('run-again').onclick=restart;
 $('play-video').onclick=()=>{if(!simulation)return;simulation.playing?simulation.pause():simulation.play();};$('replay-video').onclick=()=>simulation?.replay();
 $('video-timeline').oninput=event=>{simulation?.seek(Number(event.target.value)/1000);if(Number(event.target.value)===1000)offerGuidance();};
-$('undo').onclick=()=>{if(busy||!history.length)return;strokes=history.pop();clearSelection();render();};
-$('clear-ink').onclick=()=>{if(!strokes.length||busy)return;if(!confirm('Clear the handwriting? You can undo this.'))return;checkpoint();strokes=[];clearSelection();render();};
+$('undo').onclick=()=>{if(busy||!history.length)return;cancelInteraction();strokes=history.pop();clearSelection();render();};
+$('clear-ink').onclick=()=>{if(!strokes.length||busy)return;if(!confirm('Clear the handwriting? You can undo this.'))return;cancelInteraction();checkpoint();strokes=[];clearSelection();render();};
 $('about').onclick=()=>$('about-dialog').showModal();$('close-about').onclick=()=>$('about-dialog').close();
 document.addEventListener('keydown',event=>{
-  if(event.defaultPrevented||event.isComposing||event.repeat||event.altKey||document.querySelector('dialog[open]')||event.target.isContentEditable||event.target.closest?.('input,textarea,select,[contenteditable]'))return;
-  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();cancelPointer();$('undo').click();}
-  else if(event.key==='Escape'){cancelPointer();clearSelection();}
+  if(event.defaultPrevented||event.isComposing||event.repeat||event.altKey||document.querySelector('dialog[open]')||editableTarget(event.target))return;
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();cancelInteraction();$('undo').click();}
+  else if(event.key==='Escape'){cancelInteraction();clearSelection();}
   else if(!event.ctrlKey&&!event.metaKey){const mode={p:'pen',b:'box',m:'move',e:'eraser'}[event.key.toLowerCase()];if(mode){event.preventDefault();setTool(mode);}}
 });
-window.addEventListener('pagehide',()=>{cancelPointer();simulation?.destroy();if(imageObjectURL)URL.revokeObjectURL(imageObjectURL);});
-canvas.tabIndex=0;new ResizeObserver(resize).observe(board);setTool('move');resize();
+window.addEventListener('pagehide',()=>{cancelInteraction();simulation?.pause();});
+canvas.tabIndex=0;canvas.setAttribute('contenteditable','false');new ResizeObserver(resize).observe(surface);setTool('move');resize();

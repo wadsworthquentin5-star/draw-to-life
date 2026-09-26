@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff"><meta name="description" content="A scripted Draw to Life hackathon demonstration of one motorcycle physics problem.">
 <title>Draw to Life · Scripted demo</title>
-<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=motorcycle-ink-2">
+<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=infinite-pencil-3">
 </head>
 <body>
 <header class="topbar">
@@ -15,16 +15,26 @@
 <main id="workspace">
   <section id="board" aria-label="Whiteboard">
     <div class="board-caption"><span id="phase-caption">01 / PLACE YOUR PROBLEM</span><button id="about" class="text-button">How this demo works</button></div>
-    <div id="image-card" hidden role="button" tabindex="0" aria-label="Problem image. Select to show Check; use Move to drag." aria-pressed="false">
-      <img id="problem-image" alt="Your placed problem image" draggable="false">
-      <button id="resize-image" aria-label="Resize problem image" title="Drag to resize">↘</button>
+    <div id="canvas-viewport">
+      <div id="image-card" class="image-card" hidden role="button" tabindex="0" aria-label="Problem image. Select to show Check; use Move to drag." aria-pressed="false">
+        <img id="problem-image" class="problem-image" alt="Your placed problem image" draggable="false">
+        <button id="resize-image" class="resize-image" aria-label="Resize problem image" title="Drag to resize">↘</button>
+      </div>
+      <canvas id="ink-canvas" aria-label="Infinite handwriting canvas. Use Pen to write, Move to pan, or two fingers to pan and zoom."></canvas>
     </div>
-    <canvas id="ink-canvas" aria-label="Handwriting canvas. Draw with a finger, mouse or Pencil; select Box step to enclose your equation."></canvas>
     <div id="empty-state"><span class="eyebrow">FROM A PROBLEM TO A PICTURE</span><h1>Start with your problem.</h1><p>Insert your problem image, then move it into place.<br>Click its edge, then tap <b>Check</b>.</p><button id="empty-upload" class="text-button">Choose an image from your device ↗</button></div>
     <div id="writing-hint" hidden>Write one step here. Then use <b>Box step</b> to select it.</div>
     <button id="selection-check" class="bubble" hidden>Check</button>
     <div id="selection-help" role="status" hidden></div>
     <div class="drawing-dock">
+      <div class="view-tools" role="toolbar" aria-label="Canvas view">
+        <span class="infinite-label">∞ Canvas</span>
+        <button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+        <button id="zoom-reset" aria-label="Reset zoom to 100 percent" title="100% zoom"><output id="zoom-level">100%</output></button>
+        <button id="zoom-in" aria-label="Zoom in" title="Zoom in">＋</button>
+        <span class="tool-divider"></span>
+        <button id="fit-content" title="Bring all images and handwriting into view">Fit all</button>
+      </div>
       <div class="tools" role="toolbar" aria-label="Whiteboard tools">
         <button data-tool="move" class="active" aria-pressed="true" title="Move / select image">↖ <span>Move</span></button>
         <button data-tool="pen" aria-pressed="false" title="Pen">✎ <span>Pen</span></button>
@@ -34,7 +44,7 @@
         <button id="undo" aria-label="Undo stroke" title="Undo stroke">↶</button>
         <button id="clear-ink" aria-label="Clear handwriting" title="Clear handwriting">Clear</button>
       </div>
-      <div class="dock-caption"><span id="tool-hint">Move the image, then click it to reveal Check.</span><label><input id="pencil-only" type="checkbox"> Pencil only</label></div>
+      <div class="dock-caption"><span id="tool-hint">Drag empty space to pan. Drag images to move.</span><label title="Only Pencil draws; one finger pans. Two fingers pan and zoom."><input id="pencil-only" type="checkbox"> Pencil only</label></div>
     </div>
   </section>
   <aside id="story-panel" hidden aria-label="Guided demonstration">
@@ -65,7 +75,20 @@
   </aside>
 </main>
 <div id="toast" role="status" hidden></div>
-<dialog id="about-dialog"><div class="dialog-top"><span class="eyebrow">HACKATHON PROTOTYPE</span><button id="close-about" aria-label="Close instructions">×</button></div><h2>A demonstration of the idea.</h2><p>This version has no AI, API key, server, or handwriting recognition. Images are never preloaded: choose one from your device. Inserted images stay in this browser.</p><ol><li>Use <b>Add image</b> to insert the motorcycle problem screenshot. Drag it into place with <b>Move</b>, then click it and tap <b>Check</b>.</li><li>Read the preset motorcycle overview. Choose <b>Visualize this</b> to watch a separately drawn motorcycle accelerate; your uploaded image is not the moving object.</li><li>Choose <b>Yes, guide me</b>. Keep <b>Pen</b> selected while writing as many strokes as you need. Only when finished, choose <b>Box step</b>, draw a box around the ink, and tap <b>Check</b>. Tap <b>Pen</b> to keep writing.</li><li>The three scripted results are: correct formula, incorrect acceleration (3 instead of 4), then correct final answer.</li></ol><p class="fine">Any selected ink triggers that step's predetermined response. This demonstrates the planned interaction, not real recognition or grading. The preset motion and physics describe this one motorcycle problem, not arbitrary problems. Refreshing or restarting clears the board.</p></dialog>
-<script type="module" src="demo.js?v=motorcycle-ink-2"></script>
+<dialog id="about-dialog">
+  <div class="dialog-top"><span class="eyebrow">HACKATHON PROTOTYPE</span><button id="close-about" aria-label="Close instructions">×</button></div>
+  <h2>Space to think. Room to explore.</h2>
+  <p>The whiteboard has no fixed page edges. Use <b>Move</b> and drag blank space to pan. Pinch with two fingers or use <b>− / ＋</b> to zoom. Tap the percentage for 100% or <b>Fit all</b> to find all your work.</p>
+  <p>Add as many reference images as you need, one at a time. With <b>Move</b> selected, drag an image to place it; select it and drag its corner handle to resize. Adding an image does not erase your work.</p>
+  <p>For Apple Pencil, enable <b>Pencil only</b>: Pencil writes and a finger moves the canvas. Two fingers pan and zoom. Keep <b>Pen</b> selected while writing; use <b>Box step</b> only when ready to check.</p>
+  <ol>
+    <li>Use <b>Add image</b> to insert the motorcycle problem screenshot. Select its rim with <b>Move</b>, then tap the black <b>Check</b> bubble.</li>
+    <li>Read the preset overview and choose <b>Visualize this</b>. A separately drawn motorcycle accelerates; your reference image stays on the board.</li>
+    <li>Choose <b>Yes, guide me</b>. Write your formula, select <b>Box step</b>, enclose it, and tap <b>Check</b>. Tap <b>Pen</b> to continue writing.</li>
+    <li>The three scripted results are: correct formula, incorrect acceleration (3 instead of 4), then correct final answer.</li>
+  </ol>
+  <p class="fine">No AI, API key, or handwriting recognition is used. Any selected ink triggers that step's predetermined response. The lesson describes this one motorcycle problem, not arbitrary images. Images are never preloaded or sent to an AI service. Refreshing or restarting clears the board.</p>
+</dialog>
+<script type="module" src="demo.js?v=infinite-pencil-3"></script>
 </body>
 </html>

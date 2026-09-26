@@ -5,5 +5,23 @@
 /* Drawing gestures must not become Safari text highlights or long-press callouts. */
 #board{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #ink-canvas,#image-card,#image-card img{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-#board input,#board textarea,#board select,#board [contenteditable]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+#board input,#board textarea,#board select,#board [contenteditable="true"],#board [contenteditable=""]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 #ink-canvas:focus{outline:none}
+/* Viewport-sized drawing surface over an unbounded world; whiteboard chrome stays fixed. */
+#canvas-viewport{position:absolute;inset:52px 0 164px;overflow:hidden;touch-action:none;overscroll-behavior:contain;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#canvas-viewport #ink-canvas{inset:0;width:100%;height:100%}
+#canvas-viewport,#canvas-viewport *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.image-card{position:absolute;border:2px solid transparent;border-radius:5px;z-index:1;touch-action:none;outline:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.image-card img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-select:none;user-select:none;-webkit-user-drag:none}
+.image-card.selected{border-color:#88a866;box-shadow:0 0 0 4px #dbe8cc88}
+.image-card:focus-visible,#image-card:focus-visible{outline:2px solid #71944b;outline-offset:4px}
+body[data-tool=move] .image-card{z-index:3;cursor:grab}
+body[data-tool=move] .image-card:active{cursor:grabbing}
+.resize-image,#resize-image{position:absolute;bottom:-16px;right:-16px;background:#fff;border:1px solid #97ad79;border-radius:50%;min-height:34px;width:34px;display:none;font-size:19px;padding:0;cursor:nwse-resize;touch-action:none}
+.selected .resize-image{display:block}
+.view-tools{display:flex;align-items:center;gap:3px;background:#fff;border:1px solid #e6e9de;border-radius:11px;box-shadow:0 5px 24px #39462209;padding:3px 7px;max-width:100%}
+.view-tools button{min-height:36px;min-width:36px;border-radius:7px;font-size:15px;padding:0 8px;touch-action:manipulation}
+.view-tools button:hover{background:#f2f6eb}.view-tools #zoom-reset{min-width:64px;font-size:12px;font-variant-numeric:tabular-nums}.view-tools #fit-content{font-size:12px;white-space:nowrap}.infinite-label{font-size:11px;color:#8b947e;padding:0 9px;white-space:nowrap}.view-tools .tool-divider{height:18px;margin:0 3px}
+.drawing-dock{gap:7px}.dock-caption{align-items:center}.dock-caption label{min-height:28px;cursor:pointer}.dock-caption input{width:16px;height:16px}
+#selection-help{bottom:163px;z-index:6}#toast{bottom:170px}
+@media(max-width:760px){#canvas-viewport{bottom:164px}.drawing-dock{max-width:calc(100% - 16px)}.dock-caption{gap:8px}.dock-caption>span{max-width:170px}.infinite-label{padding:0 5px}}
