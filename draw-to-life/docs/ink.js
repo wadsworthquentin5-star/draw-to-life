@@ -1,6 +1,6 @@
 export const W=1400,H=900;
 let sequence=0;
-// Drawing IDs are local identifiers, not credentials. This also works over iPad LAN HTTP.
+                                                                                          
 const strokeId=()=>`stroke-${Date.now().toString(36)}-${++sequence}`;
 export function bounds(item) {
   if(item.type==='text') return {left:item.x,top:item.y-28,right:item.x+item.text.length*16,bottom:item.y+8};
