@@ -10,7 +10,7 @@ export class Simulation {
     const left=Math.min(b.left,ab.left+(mb.min-m.x0)*pxPerM)-40,right=Math.max(b.right,ab.right+(mb.max-m.x0)*pxPerM)+40,top=b.top-65,bottom=b.bottom+50;
     const scale=Math.min((w-36)/(right-left),(h-24)/(bottom-top)),ox=(w-(right-left)*scale)/2-left*scale,oy=(h-(bottom-top)*scale)/2-top*scale;
     c.setTransform(scale,0,0,scale,ox,oy);for(const i of this.items)if(!this.ids.has(i.id))paint(c,i);
-    // Equal simulated time intervals show growing gaps when speed increases.
+                                                                             
     for(let k=0;k<=8;k++){const t=m.t*k/8;if(t>time)break;const p=stateAt(m,t);c.beginPath();c.fillStyle='#bacd9b';c.arc((ab.left+ab.right)/2+(p.x-m.x0)*pxPerM,ab.bottom+14,4,0,Math.PI*2);c.fill();}
     c.save();c.globalAlpha=.14;this.actor.forEach(i=>paint(c,i));c.restore();c.save();c.translate(dx,0);this.actor.forEach(i=>paint(c,i));c.restore();
     c.setTransform(1,0,0,1,0,0);c.fillStyle='#6e7a5e';c.font='13px Arial';c.textAlign='right';c.fillText(`t = ${time.toFixed(2)} s`,w-16,h-12);c.textAlign='left';
