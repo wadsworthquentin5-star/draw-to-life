@@ -14,8 +14,17 @@ The current GitHub Pages app starts with a blank whiteboard. No problem image is
 
 **This is a simulated demo, not handwriting recognition.** Responses follow the three-stage script regardless of the selected ink. Inserted images stay in the browser. Restart and refresh clear the image and handwriting. Leave Pencil only off when using a finger.
 
+## Infinite canvas and Apple Pencil
+
+- Drag blank space with **Move** to pan in any direction. There are no fixed page edges.
+- Pinch with two fingers, or use **− / ＋** to zoom. Tap the percentage for 100%; use **Fit all** to find your work.
+- Insert more images without erasing earlier images or ink. Move each image independently and drag its corner handle to resize.
+- Enable **Pencil only** for Pencil ink and one-finger panning. Two fingers pan and zoom. Keep **Pen** selected until you intentionally choose **Box step**.
+- Blue highlighting is native browser selection. The drawing surface now suppresses native selection and gives Pencil priority over palm touches. Physical iPad verification is still needed.
+- Optional troubleshooting: **Settings → Apple Pencil → Scribble → Off** temporarily. Scribble is handwriting-to-text; this is an isolation test, not a confirmed cause. [Apple guide](https://support.apple.com/guide/ipad/enter-text-with-scribble-ipad355ab2a7/ipados).
+
 ## Current published files
 
-The current app source is `docs/index.html`, `docs/demo.css`, `docs/demo.js`, `docs/demo-model.js`, `docs/demo-simulation.js`, and `docs/favicon.svg`, with `docs/.nojekyll`. GitHub Pages publishes **main → /docs**. The September 26, 2026 update adds the independent motorcycle animation, persistent Pen mode, pointer-interruption recovery, and native-selection prevention. The complete local development package passes 58 automated tests; repeated writing and explicit boxing were browser-tested locally. Physical iPad/Pencil testing is still needed.
+The current app source is `docs/index.html`, `docs/demo.css`, `docs/demo.js`, `docs/demo-model.js`, `docs/demo-simulation.js`, and `docs/favicon.svg`, with `docs/.nojekyll`. GitHub Pages publishes **main → /docs**. The September 26, 2026 update adds the independent motorcycle animation, persistent Pen mode, pointer-interruption recovery, native-selection prevention, and the infinite-canvas controls above. The complete local development package passes 76 automated tests; multiple-image insertion, resize/move, repeated writing, zoom/pan/Fit all, playback, guidance, and explicit boxing were browser-tested locally. Physical iPad/Pencil testing is still needed.
 
 Older files under `public/`, `scripts/`, `tests/`, the nested `draw-to-life/` folder, and the backend belong to earlier prototypes. They were retained, not synchronized by this Pages-only deployment. Do not rebuild the current site from those older scripts: they can restore the old interface. Edit the current `docs` files directly, or first synchronize the complete latest development package. Old unreferenced assets in `docs/` are not loaded by the new entry point.
