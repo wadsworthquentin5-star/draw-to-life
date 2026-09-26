@@ -19,11 +19,10 @@ const muted = '#718078';
 const round = value => value.toFixed(1);
 
 export class DemoSimulation {
-  constructor(canvas, image, onFrame = () => {}, onEnded = () => {}) {
+  constructor(canvas, _unusedImage, onFrame = () => {}, onEnded = () => {}) {
     if (!canvas?.getContext) throw new TypeError('DemoSimulation needs a canvas.');
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.image = image;
     this.onFrame = onFrame;
     this.onEnded = onEnded;
     this.fraction = 0;
@@ -31,8 +30,6 @@ export class DemoSimulation {
     this.destroyed = false;
     this.raf = null;
     this.lastTimestamp = null;
-    this.imageLoaded = () => this.render();
-    image?.addEventListener?.('load', this.imageLoaded);
     this.tick = this.tick.bind(this);
     this.resize = this.resize.bind(this);
     this.resize();
@@ -115,7 +112,6 @@ export class DemoSimulation {
     this.playing = false;
     cancelAnimationFrame(this.raf);
     this.observer?.disconnect();
-    this.image?.removeEventListener?.('load', this.imageLoaded);
     this.onFrame = () => {};
     this.onEnded = () => {};
   }
@@ -150,27 +146,88 @@ export class DemoSimulation {
     const c = this.ctx;
     c.save();
     c.globalAlpha = alpha;
-    const sourceW = this.image?.naturalWidth || this.image?.width || 0;
-    const sourceH = this.image?.naturalHeight || this.image?.height || 0;
-    if (sourceW > 0 && sourceH > 0 && this.image?.complete !== false) {
-      // Crop the solid rider from the supplied 1200 × 488 problem image at render time.
-      // Ratios preserve the crop when the same source is saved at another resolution.
-      c.drawImage(this.image, sourceW * 0.56, sourceH * 0.52, sourceW * 0.125,
-        sourceH * 0.2275, x - 69, roadY - 105, 142, 105);
-    } else {
-      // The UI remains usable if its bundled image has not loaded yet.
-      c.strokeStyle = ink;
-      c.lineWidth = 4;
-      for (const wheelX of [x - 43, x + 42]) {
-        c.beginPath(); c.arc(wheelX, roadY - 17, 17, 0, Math.PI * 2); c.stroke();
+    c.translate(x, roadY);
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+
+    // This is a standalone vector motorcycle, not a crop or transformation of an upload.
+    const path = (points, fill, stroke = null, width = 2) => {
+      c.beginPath(); c.moveTo(...points[0]);
+      for (const point of points.slice(1)) c.lineTo(...point);
+      if (fill) { c.closePath(); c.fillStyle = fill; c.fill(); }
+      if (stroke) { c.strokeStyle = stroke; c.lineWidth = width; c.stroke(); }
+    };
+    c.fillStyle = '#17221e0c';
+    c.beginPath(); c.ellipse(0, 3, 73, 5, 0, 0, Math.PI * 2); c.fill();
+
+    const wheelAngle = (x - initialX) / 21;
+    for (const wheelX of [-47, 47]) {
+      c.save(); c.translate(wheelX, -22);
+      c.fillStyle = '#253238';
+      c.beginPath(); c.arc(0, 0, 22, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#536269'; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(0, 0, 19, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = '#f8faf8';
+      c.beginPath(); c.arc(0, 0, 15, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#a1b0b5'; c.lineWidth = 2.5;
+      c.rotate(wheelAngle);
+      for (let spoke = 0; spoke < 5; spoke++) {
+        const angle = spoke * Math.PI * 2 / 5;
+        c.beginPath(); c.moveTo(0, 0);
+        c.lineTo(Math.cos(angle) * 14, Math.sin(angle) * 14); c.stroke();
       }
-      c.beginPath();
-      c.moveTo(x - 43, roadY - 17); c.lineTo(x - 8, roadY - 51);
-      c.lineTo(x + 24, roadY - 51); c.lineTo(x + 42, roadY - 17);
-      c.moveTo(x - 8, roadY - 51); c.lineTo(x + 6, roadY - 80);
-      c.lineTo(x + 28, roadY - 63); c.stroke();
-      c.beginPath(); c.arc(x + 8, roadY - 92, 9, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = '#536269';
+      c.beginPath(); c.arc(0, 0, 5, 0, Math.PI * 2); c.fill();
+      c.restore();
     }
+
+    // Swingarm, chassis, engine, and exhaust make the motorcycle silhouette distinct.
+    path([[-47, -22], [-10, -26], [16, -52], [-28, -52], [-47, -22]], null, '#576972', 5);
+    path([[-47, -22], [-17, -29]], null, '#acb8bb', 2);
+    path([[-11, -43], [10, -43], [15, -29], [8, -22], [-10, -23]], '#3d4b52', '#26353b');
+    for (const y of [-37, -32, -27]) path([[-7, y], [8, y]], null, '#8b999d', 1.5);
+    path([[-2, -23], [-25, -15], [-54, -18]], null, '#70838b', 7);
+    path([[-25, -15], [-53, -18]], null, '#c4ced0', 4);
+
+    // Forks and front mudguard.
+    path([[30, -65], [46, -23]], null, '#d5dfe0', 7);
+    path([[33, -59], [47, -22]], null, '#536975', 3);
+    c.strokeStyle = '#1478a0'; c.lineWidth = 5;
+    c.beginPath(); c.arc(47, -22, 27, Math.PI * 1.08, Math.PI * 1.87); c.stroke();
+
+    // Blue bodywork: rear cowl, fuel tank, and angled fairing.
+    path([[-67, -56], [-39, -60], [-17, -53], [-30, -44], [-57, -46]], '#2185ab', '#176180');
+    path([[-30, -55], [-16, -70], [4, -71], [25, -60], [14, -45], [-9, -45]], '#268fb4', '#155d7b');
+    path([[-15, -64], [2, -66], [16, -59]], null, '#80c7da', 3);
+    path([[21, -65], [39, -61], [48, -47], [30, -33], [8, -35], [15, -49]], '#1478a0', '#155d7b');
+    path([[19, -53], [40, -51], [28, -40], [16, -41]], '#eef5ef');
+    path([[29, -68], [34, -82], [43, -72], [41, -61]], '#c1e3e6', '#87bac4', 1.5);
+    path([[43, -53], [49, -48], [43, -45]], '#f6d683');
+    path([[-53, -59], [-20, -60], [-13, -54], [-42, -53]], '#26373f');
+    path([[-65, -53], [-61, -52]], null, '#f09a79', 3);
+    path([[24, -66], [31, -77], [38, -75]], null, '#344d58', 3);
+    path([[31, -76], [29, -87]], null, '#637f8a', 2);
+    c.fillStyle = '#536d77';
+    c.beginPath(); c.ellipse(28, -89, 5, 3, -0.35, 0, Math.PI * 2); c.fill();
+
+    // A helmeted rider leans into the handlebars. Broad shapes remain readable at iPad size.
+    path([[-26, -64], [-5, -45], [-17, -27]], null, '#243d50', 12);
+    path([[-24, -63], [-6, -45]], null, '#486478', 3);
+    path([[-18, -28], [-11, -23], [-1, -23]], null, '#172b37', 7);
+    path([[-33, -64], [-21, -88], [-5, -105], [8, -96], [-2, -77], [-17, -61]], '#27675e', '#194d48', 2);
+    path([[-23, -82], [-7, -99]], null, '#79a798', 3);
+    path([[3, -96], [14, -83], [31, -76]], null, '#27675e', 9);
+    path([[5, -95], [16, -84], [28, -79]], null, '#79a798', 2.5);
+    path([[30, -76], [35, -75]], null, '#203d3c', 6);
+    path([[1, -104], [6, -97]], null, '#243e46', 7);
+
+    // Full-face helmet with a high-contrast dark visor.
+    c.fillStyle = '#f1b57c'; c.strokeStyle = '#ad7651'; c.lineWidth = 1.5;
+    c.beginPath(); c.ellipse(10, -111, 14, 12, 0.35, 0, Math.PI * 2); c.fill(); c.stroke();
+    path([[8, -121], [20, -116], [24, -109], [10, -109], [3, -115]], '#203e4b');
+    path([[12, -117], [19, -114]], null, '#83b9c8', 2);
+    path([[11, -108], [24, -107], [20, -101], [8, -103]], '#e6a670', '#ad7651', 1);
+    path([[1, -118], [4, -120]], null, '#ffdeba', 2.5);
     c.restore();
   }
 
