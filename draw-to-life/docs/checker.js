@@ -51,7 +51,7 @@ export function checkStep(text, model) {
         return {status:'incorrect',message:hint};
       }
     }
-    // Validate a symbolic formula on independent states, not just a coincidental equality in this demo.
+                                                                                                        
     const symbolic=parts.every(p=>!/[ms]|cm|km/.test(p.replace(/sqrt/g,''))) && parts.some(p=>/[xvat]/.test(p)) && !/[3-9]/.test(normalized);
     if(symbolic) {
       for(const test of [{x0:3,v0:7,a:2,t:4},{x0:-2,v0:9,a:-1,t:3}]) {
