@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-// Explicit allowlist: never copy .env, server code, or hosting configuration.
+                                                                              
 export const pagesFiles = ['index.html', 'style.css', 'app.js', 'ink.js', 'simulation.js', 'physics.js', 'checker.js', 'runtime.js', 'favicon.svg'];
 export async function pagesAssets() {
   const assets = {};
