@@ -2,19 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#ffffff"><meta name="description" content="A scripted Draw to Life hackathon demonstration of motorcycle motion and electron-shell capacities.">
-<title>Draw to Life · Demo</title>
-<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=image-flow-5">
+<meta name="theme-color" content="#ffffff"><meta name="description" content="Explore motorcycle motion and electron-shell capacities with a visual whiteboard and step-by-step guidance.">
+<title>Draw to Life</title>
+<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=clean-copy-6">
 </head>
 <body>
 <header class="topbar">
   <a class="brand" href="./"><img src="favicon.svg" alt="" width="29" height="29">draw to life<span>.</span></a>
-  <span class="demo-badge">Demo</span>
   <div class="header-actions"><button id="add-image" class="primary upload">＋ Add image</button><input id="image-input" type="file" accept="image/png,image/jpeg,image/webp" hidden><button id="restart" class="quiet">Restart</button></div>
 </header>
 <main id="workspace">
   <section id="board" aria-label="Whiteboard">
-    <div class="board-caption"><span id="phase-caption">01 / PLACE YOUR PROBLEM</span><button id="about" class="text-button">How this demo works</button></div>
+    <div class="board-caption"><span id="phase-caption">01 / PLACE YOUR PROBLEM</span><button id="about" class="text-button">How it works</button></div>
     <div id="canvas-viewport">
       <div id="image-card" class="image-card" hidden role="button" tabindex="0" aria-label="Problem image. Select to show Check; use Move to drag." aria-pressed="false">
         <img id="problem-image" class="problem-image" alt="Your placed problem image" draggable="false">
@@ -47,7 +46,7 @@
       <div class="dock-caption"><span id="tool-hint">Drag empty space to pan. Drag images to move.</span><label title="Only Pencil draws; one finger pans. Two fingers pan and zoom."><input id="pencil-only" type="checkbox"> Pencil only</label></div>
     </div>
   </section>
-  <aside id="story-panel" hidden aria-label="Guided demonstration">
+  <aside id="story-panel" hidden aria-label="Step-by-step guidance">
     <div class="panel-top"><span class="eyebrow">DRAW → VISUALIZE → UNDERSTAND</span></div>
     <section id="loading-card" hidden aria-live="polite"><span class="loading-orbit"></span><h2 id="loading-title">Reviewing your problem…</h2><p id="loading-copy">Finding the given values and what you need to solve.</p><div class="progress-track"><div id="loading-progress"></div></div></section>
     <section id="overview-card" hidden>
@@ -72,7 +71,7 @@
     <section id="guidance-card" hidden aria-live="polite">
       <div class="step-progress"><span id="step-count" class="eyebrow">STEP 1 OF 3</span><span id="step-dots">● ○ ○</span></div>
       <h2 id="step-title"></h2><p id="step-prompt" class="body-copy"></p>
-      <details class="presenter-cue"><summary>Presenter cue</summary><p id="expected-writing"></p><p class="fine">Handwrite this on the board. Choose Box step and circle it with a freehand loop.</p></details>
+      <details class="presenter-cue"><summary>Writing guide</summary><p id="expected-writing"></p><p class="fine">Handwrite this on the board. Choose Box step and circle it with a freehand loop.</p></details>
       <button id="choose-box" class="secondary">◯ Circle my handwritten step</button>
       <div id="step-feedback" hidden></div>
       <button id="retry-step" class="secondary" hidden>Try this step again ↺</button>
@@ -95,7 +94,7 @@
 </main>
 <div id="toast" role="status" hidden></div>
 <dialog id="about-dialog">
-  <div class="dialog-top"><span class="eyebrow">HACKATHON PROTOTYPE</span><button id="close-about" aria-label="Close instructions">×</button></div>
+  <div class="dialog-top"><span class="eyebrow">QUICK GUIDE</span><button id="close-about" aria-label="Close instructions">×</button></div>
   <h2>Space to think. Room to explore.</h2>
   <p>The whiteboard has no fixed page edges. Use <b>Move</b> and drag blank space to pan. Pinch with two fingers or use <b>− / ＋</b> to zoom. Tap the percentage for 100% or <b>Fit all</b> to find all your work.</p>
   <p>Add as many reference images as you need, one at a time. With <b>Move</b> selected, drag an image to place it; select it and drag its corner handle to resize. Adding an image does not erase your work.</p>
@@ -104,12 +103,12 @@
     <li>Use <b>Add image</b> to insert the motorcycle problem screenshot. Select its rim with <b>Move</b>, then tap the black <b>Check</b> bubble.</li>
     <li>Read the overview and choose <b>Visualize this</b>. A separately drawn motorcycle accelerates; your reference image stays on the board.</li>
     <li>Choose <b>Yes, guide me</b>. Write the velocity formula, choose <b>Box step</b>, circle it with a freehand loop, and tap <b>Check</b>. Tap <b>Pen</b> to continue writing. Step 3 uses the position equation, including the initial 5 m.</li>
-    <li>The three physics responses confirm the formula, correct an acceleration of 3 to 4 m/s², then confirm the final position: <b>43 m east of the sign</b>.</li>
+    <li>Use the problem's given values and include units in your answer. The final position is measured east of the city-limit sign, so include the initial 5 m.</li>
     <li>After finishing physics, use <b>Add image</b> to insert the atom problem. Select its rim and tap <b>Check</b> to continue with the three shells and their capacities of 2, 8, and 18.</li>
-    <li>For chemistry guidance, first write n = 3 for the first shell to demonstrate the planned mistake. Check explains why the first shell needs n = 1. Retry with n = 1, then work through n = 2, n = 3, and the total <b>2 + 8 + 18 = 28</b>.</li>
+    <li>For chemistry guidance, calculate each shell's capacity using <b>2n²</b>. Circle each step and tap <b>Check</b>, correct any errors, then add the three capacities.</li>
   </ol>
-  <p class="fine">Demo preview: these two example lessons use prepared responses and visuals. Insert your own images to walk through the examples. Refreshing or restarting clears the board.</p>
+  <p class="fine">Refreshing or restarting clears the board.</p>
 </dialog>
-<script type="module" src="demo.js?v=image-flow-5"></script>
+<script type="module" src="demo.js?v=clean-copy-6"></script>
 </body>
 </html>
