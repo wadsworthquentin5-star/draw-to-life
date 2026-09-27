@@ -1,5 +1,6 @@
-import {DEMO_STEPS,normaliseBox,selectInkIds} from './demo-model.js';
-import {DemoSimulation} from './demo-simulation.js?v=motorcycle-ink-2';
+import {DEMO_OVERVIEW,DEMO_STEPS,CHEMISTRY_OVERVIEW,CHEMISTRY_STEPS,normaliseBox,normaliseLasso,selectLassoInkIds} from './demo-model.js?v=lasso-chemistry-4';
+import {DemoSimulation} from './demo-simulation.js?v=lasso-chemistry-4';
+import {ChemistrySimulation} from './chemistry-simulation.js?v=lasso-chemistry-4';
 
 const $=id=>document.getElementById(id), W=1400,H=1000;
 const canvas=$('ink-canvas'),ctx=canvas.getContext('2d'),board=$('board'),surface=$('canvas-viewport')||board;
@@ -9,11 +10,12 @@ const camera={scale:1,offsetX:0,offsetY:0},viewport={width:0,height:0},touches=n
 let cameraReady=false,pinch=null,touchNavigation=false,lastPenTime=-Infinity;
 let phase='place',stepIndex=0,stepChecked=false,checkedIds=new Set(),busy=false,generation=0,simulation=null;
 let toastTimer,loadingTimers=[],imageLoadVersion=0;
+let lesson='physics',stepAttempt=0,atomSimulation=null;
 
 const TOOL_DEFINITIONS = Object.freeze({
   move: { cursor: 'grab', hint: 'Drag blank space to pan. Drag or resize any image.' },
   pen: { cursor: 'crosshair', hint: 'Pen stays on. Pinch to zoom; choose Box only when finished.' },
-  box: { cursor: 'crosshair', hint: 'Drag a box fully around your handwritten step.' },
+  box: { cursor: 'crosshair', hint: 'Draw a loop around your step, then lift to show Check.' },
   eraser: { cursor: 'cell', hint: 'Drag across a stroke to erase it.' },
 });
 
@@ -174,9 +176,18 @@ class CanvasRenderer {
     context.strokeStyle = '#86a75f';
     context.lineWidth = 2.5;
     context.fillStyle = '#b5d08f18';
-    context.setLineDash(selected ? [9, 7] : [6, 6]);
-    context.fillRect(rectangle.left, rectangle.top, rectangle.width, rectangle.height);
-    context.strokeRect(rectangle.left, rectangle.top, rectangle.width, rectangle.height);
+    context.setLineDash(rectangle.closed ? [9, 7] : []);
+    const points = rectangle.points;
+    if (points?.length) {
+      context.beginPath();
+      context.moveTo(points[0].x, points[0].y);
+      for (const point of points.slice(1)) context.lineTo(point.x, point.y);
+      if (rectangle.closed) {
+        context.closePath();
+        context.fill();
+      }
+      context.stroke();
+    }
     context.restore();
   }
 
@@ -302,7 +313,10 @@ function positionCheck(){
   const button=$('selection-check');button.hidden=true;
   let box;
   if(busy)return;
-  if(imageSelected&&imageRect&&['place','overview'].includes(phase))box={left:imageRect.x,top:imageRect.y,right:imageRect.x+imageRect.width,bottom:imageRect.y+imageRect.height};
+  if(imageSelected&&imageRect&&['place','overview'].includes(phase)){
+    if(lesson==='chemistry'&&images.find(item=>item.id===selectedImageId)?.lesson!=='chemistry')return;
+    box={left:imageRect.x,top:imageRect.y,right:imageRect.x+imageRect.width,bottom:imageRect.y+imageRect.height};
+  }
   else if(phase==='guided'&&!stepChecked&&selection&&selectedIds.length)box=selection;
   else return;
   const edge=screen({x:box.right,y:(box.top+box.bottom)/2}),below=screen({x:(box.left+box.right)/2,y:box.bottom}),surfaceX=surface.offsetLeft||0,surfaceY=surface.offsetTop||0;
@@ -339,8 +353,8 @@ function loading(title,copy,duration,done){
 function scrollPanel(){if(matchMedia('(max-width:760px)').matches)$('story-panel').scrollIntoView({block:'start',behavior:'smooth'});else $('story-panel').scrollTop=0;}
 function resetFlow(){
   cancelInteraction();
-  cancelLoading();simulation?.destroy();simulation=null;strokes=[];history=[];checkedIds=new Set();stepIndex=0;stepChecked=false;phase='place';clearSelection();
-  for(const id of ['loading-card','overview-card','video-card','guidance-offer','guidance-card','complete-card','step-feedback','next-step'])$(id).hidden=true;
+  cancelLoading();simulation?.destroy();simulation=null;atomSimulation?.destroy();atomSimulation=null;lesson='physics';stepAttempt=0;strokes=[];history=[];checkedIds=new Set();stepIndex=0;stepChecked=false;phase='place';clearSelection();
+  hideLessonCards();
   $('story-panel').hidden=true;$('phase-caption').textContent='01 / PLACE YOUR PROBLEM';setTool('move');render();resize();
 }
 function createImageCard(item){
@@ -355,7 +369,7 @@ async function placeImage(src,{objectURL=false,version=imageLoadVersion}={}){
     if(image.naturalWidth*image.naturalHeight>24000000)throw new Error('Use an image smaller than 24 megapixels.');
     const center=localToWorld({x:viewport.width/2,y:viewport.height/2});
     const fit=Math.min(1,viewport.width*.72/image.naturalWidth,viewport.height*.6/image.naturalHeight)/camera.scale;
-    const width=image.naturalWidth*fit,height=image.naturalHeight*fit,item={id:`image-${++serial}`,rect:{x:center.x-width/2,y:center.y-height/2,width,height},image,src,objectURL};
+    const width=image.naturalWidth*fit,height=image.naturalHeight*fit,item={id:`image-${++serial}`,rect:{x:center.x-width/2,y:center.y-height/2,width,height},image,src,objectURL,lesson};
     createImageCard(item);images.push(item);$('empty-state').hidden=true;
     setTool('move');selectImage(true,item.id);redraw();
     toast('Image added. Drag it anywhere with Move; use the corner to resize.');
@@ -413,6 +427,11 @@ function movePinch(){
   const center={x:(a.x+b.x)/2,y:(a.y+b.y)/2};camera.scale=clamp(pinch.scale*Math.hypot(a.x-b.x,a.y-b.y)/pinch.distance,pinch.scale<.15?.0001:.15,4);
   camera.offsetX=center.x-pinch.anchor.x*camera.scale;camera.offsetY=center.y-pinch.anchor.y*camera.scale;redraw();
 }
+function lassoPreview(points){
+  const bounds=ContentBounds.collect([],[{points}]);
+  if(bounds.empty)return null;
+  return {...normaliseBox({x:bounds.left,y:bounds.top},{x:bounds.right,y:bounds.bottom}),points,closed:false};
+}
 function pointerDown(event){
   if(event.cancelable!==false)event.preventDefault();clearNativeSelection();
   if(busy)return;
@@ -434,7 +453,7 @@ function pointerDown(event){
   selectImage(false);
   if(tool==='move'||event.pointerType==='touch'&&$('pencil-only').checked){clearSelection();beginPan(event,owner);return;}
   pointer={id:event.pointerId,pointerType:event.pointerType,kind:tool,owner,start:p};capturePointer(owner,event.pointerId);
-  if(tool==='box'){selectedIds=[];selection=normaliseBox(p,p);}
+  if(tool==='box'){selectedIds=[];pointer.points=[p];selection=lassoPreview(pointer.points);}
   else if(tool==='pen'||tool==='eraser'){
     pointer.historyLength=history.length;pointer.historyBefore=history.slice();checkpoint();pointer.before=history.at(-1);
     if(tool==='pen'){selection=null;selectedIds=[];const stroke={id:`ink-${++serial}`,type:'pen',points:[p]};strokes.push(stroke);pointer.stroke=stroke;}
@@ -453,7 +472,11 @@ function pointerMove(event){
     pointer.item.rect.width=Math.max(40,r.width+(dx+dy*aspect)/(1+aspect*aspect));pointer.item.rect.height=pointer.item.rect.width*aspect;
   }
   else if(pointer.kind==='pen'){const coalesced=event.getCoalescedEvents?.(),events=coalesced?.length?coalesced:[event];for(const e of events)pointer.stroke.points.push(world(e));}
-  else if(pointer.kind==='box')selection=normaliseBox(pointer.start,p);
+  else if(pointer.kind==='box'){
+    const coalesced=event.getCoalescedEvents?.(),events=coalesced?.length?coalesced:[event];
+    for(const entry of events){const point=world(entry),last=pointer.points.at(-1);if(Math.hypot(point.x-last.x,point.y-last.y)>.5/camera.scale)pointer.points.push(point);}
+    selection=lassoPreview(pointer.points);
+  }
   else if(pointer.kind==='eraser')erase(p);
   redraw();
 }
@@ -475,14 +498,16 @@ function finishPointer(event){
   const active=pointer,wasBox=active.kind==='box',completed=event.type==='pointerup';pointer=null;releasePointer(active);
   if(active.pointerType==='pen')lastPenTime=Date.now();
   if(completed&&Number.isFinite(event.clientX)&&Number.isFinite(event.clientY)){
-    if(wasBox)selection=normaliseBox(active.start,world(event));
+    if(wasBox)active.points.push(world(event));
     else if(active.kind==='pen')active.stroke.points.push(world(event));
   }
   if(wasBox){
     if(completed){
-      selectedIds=selectInkIds(strokes.filter(s=>!checkedIds.has(s.id)),selection);
+      selection=normaliseLasso(active.points);
+      if(selection)selection.closed=true;
+      selectedIds=selectLassoInkIds(strokes.filter(s=>!checkedIds.has(s.id)),selection);
       $('selection-help').hidden=false;
-      $('selection-help').textContent=phase!=='guided'?'Start guidance after the visualization to check a handwritten step.':stepChecked?'Use Next step to continue the script.':selectedIds.length?'Step selected. Tap the black Check bubble.':'Include the whole handwritten step in the box. Previously checked ink is not selected again.';
+      $('selection-help').textContent=phase!=='guided'?'Start guidance after the visualization to check a handwritten step.':stepChecked?'Use the feedback button to continue.':selectedIds.length?'Step selected. Tap the black Check bubble.':'Draw a loop around the whole handwritten step. A line or empty loop cannot be checked; previously checked ink is skipped.';
     }else{selection=null;selectedIds=[];$('selection-help').hidden=true;}
   }
   redraw();
@@ -522,16 +547,49 @@ eventBindings
     }
   });
 
+function lessonSteps(){return lesson==='chemistry'?CHEMISTRY_STEPS:DEMO_STEPS;}
+function activeStep(){
+  const step=lessonSteps()[stepIndex];
+  return lesson==='chemistry'&&stepIndex===0&&stepAttempt===0?{...step,...step.firstAttempt}:step;
+}
+function hideLessonCards(){
+  for(const id of ['loading-card','overview-card','video-card','guidance-offer','guidance-card','complete-card','chemistry-upload-card','chemistry-card','chemistry-complete-card','step-feedback','next-step','retry-step'])$(id).hidden=true;
+}
+function renderOverview(){
+  const chemistry=lesson==='chemistry',overview=chemistry?CHEMISTRY_OVERVIEW:DEMO_OVERVIEW;
+  $('overview-title').textContent=chemistry?'Three shells. One capacity rule.':'A motorcycle. One straight road.';
+  $('overview-summary').textContent=overview.summary;
+  const rows=chemistry?[
+    ['Shell numbers','n = 1, 2, 3'],['Capacity formula','2n²'],['What to find','Maximum total electrons'],['Model','Three shell capacities'],
+  ]:overview.knowns.map(value=>[value.label,`${value.symbol} = ${value.value} ${value.unit}`]);
+  $('overview-knowns').replaceChildren();
+  for(const [label,value] of rows){
+    const row=document.createElement('div'),term=document.createElement('dt'),definition=document.createElement('dd');
+    term.textContent=label;definition.textContent=value;row.append(term,definition);$('overview-knowns').append(row);
+  }
+  $('overview-visual-prompt').textContent=chemistry?'Build the shell model as you calculate. Each correct shell step adds its electrons.':'Watch how the motorcycle’s speed and position change.';
+  $('overview-disclosure').textContent=overview.disclosure;
+}
 function checkImage(){
-  if(!imageRect||busy)return;phase='reviewing';selectImage(false);$('phase-caption').textContent='02 / UNDERSTAND THE PROBLEM';
-  loading('Reviewing your problem…','Showing the prepared motorcycle overview.',950,()=>{phase='overview';$('overview-card').hidden=false;scrollPanel();});
+  if(!imageRect||busy||!['place','overview'].includes(phase))return;
+  if(lesson==='chemistry'&&images.find(item=>item.id===selectedImageId)?.lesson!=='chemistry'){
+    toast('Add the chemistry word-problem image, then select its edge to check it.');return;
+  }
+  phase='reviewing';selectImage(false);$('chemistry-upload-card').hidden=true;$('phase-caption').textContent=lesson==='chemistry'?'CHEMISTRY / UNDERSTAND THE PROBLEM':'02 / UNDERSTAND THE PROBLEM';
+  loading('Reviewing your problem…',lesson==='chemistry'?'Showing the prepared three-shell overview.':'Showing the prepared motorcycle overview.',950,()=>{phase='overview';renderOverview();$('overview-card').hidden=false;scrollPanel();});
 }
 async function visualize(){
   if(phase!=='overview'||busy)return;phase='generating';
   loading('Preparing your visualization…','A little motion makes the problem easier to see.',1900,async()=>{
     try{
       const image=placedImage;if(phase!=='generating')return;
-      if(!image)throw new Error('Insert your motorcycle problem image first.');
+      if(!image)throw new Error('Insert your problem image first.');
+      if(lesson==='chemistry'){
+        phase='clip';$('chemistry-card').hidden=false;$('phase-caption').textContent='CHEMISTRY / BUILD THE SHELL MODEL';
+        atomSimulation?.destroy();
+        atomSimulation=new ChemistrySimulation($('atom-canvas'),frame=>{$('atom-total').textContent=`${frame.total} / 28 electrons shown`;});
+        scrollPanel();offerGuidance();return;
+      }
       phase='clip';$('video-card').hidden=false;$('phase-caption').textContent='03 / SEE IT IN MOTION';
       simulation?.destroy();simulation=new DemoSimulation($('video-canvas'),null,frame=>{
         $('video-time').textContent=`${frame.time.toFixed(2)} s`;$('video-timeline').value=String(frame.time/2*1000);$('play-video').textContent=frame.playing?'Ⅱ':'▶';
@@ -542,37 +600,66 @@ async function visualize(){
 }
 function offerGuidance(){if(phase!=='clip')return;phase='offer';$('guidance-offer').hidden=false;$('guidance-offer').scrollIntoView({block:'nearest',behavior:'smooth'});}
 function renderStep(){
-  const step=DEMO_STEPS[stepIndex];$('step-count').textContent=`STEP ${stepIndex+1} OF 3`;$('step-dots').textContent=DEMO_STEPS.map((_,i)=>i<=stepIndex?'●':'○').join(' ');
+  const steps=lessonSteps(),step=activeStep();$('step-count').textContent=`STEP ${stepIndex+1} OF ${steps.length}`;$('step-dots').textContent=steps.map((_,i)=>i<=stepIndex?'●':'○').join(' ');
   $('step-title').textContent=step.title;$('step-prompt').textContent=step.prompt;
   $('expected-writing').textContent=step.expectedWriting+(step.optionalWriting?`\nOptional: ${step.optionalWriting}`:'');
-  $('step-feedback').hidden=true;$('step-feedback').replaceChildren();$('next-step').hidden=true;stepChecked=false;
-  clearSelection();setTool('pen');$('phase-caption').textContent=`04 / HANDWRITE & BOX · STEP ${stepIndex+1}`;
+  $('step-feedback').hidden=true;$('step-feedback').replaceChildren();$('next-step').hidden=true;$('retry-step').hidden=true;stepChecked=false;
+  clearSelection();setTool('pen');$('phase-caption').textContent=`${lesson==='chemistry'?'CHEMISTRY':'04'} / WRITE & CIRCLE · STEP ${stepIndex+1}`;
 }
 function startGuidance(){
   if(!['offer','clip'].includes(phase))return;simulation?.pause();phase='guided';$('guidance-offer').hidden=true;$('guidance-card').hidden=false;
-  renderStep();render();$('guidance-card').scrollIntoView({block:'nearest',behavior:'smooth'});toast('Handwrite the formula. Then choose Box step and draw a rectangle around it.');
+  renderStep();render();$('guidance-card').scrollIntoView({block:'nearest',behavior:'smooth'});toast('Write your step. Choose Box mode and draw a loop around it.');
 }
 function checkInk(){
   if(phase!=='guided'||stepChecked||busy||!selection||!selectedIds.length)return;
-  const ids=[...selectedIds],version=generation,index=stepIndex;setBusy(true);$('selection-check').hidden=true;
+  const ids=[...selectedIds],version=generation,index=stepIndex,attempt=stepAttempt,selectedLesson=lesson;setBusy(true);$('selection-check').hidden=true;
   toast('Checking this demo step…');
   loadingTimers.push(setTimeout(()=>{
-    if(version!==generation||phase!=='guided'||index!==stepIndex)return;setBusy(false);
-    if(!ids.every(id=>strokes.some(s=>s.id===id))){toast('The selection changed. Box your step again.');return;}
-    const step=DEMO_STEPS[stepIndex],feedback=$('step-feedback');stepChecked=true;ids.forEach(id=>checkedIds.add(id));
+    if(version!==generation||phase!=='guided'||index!==stepIndex||attempt!==stepAttempt||lesson!==selectedLesson)return;setBusy(false);
+    if(!ids.every(id=>strokes.some(s=>s.id===id))){toast('The selection changed. Circle your step again.');return;}
+    const step=activeStep(),feedback=$('step-feedback');stepChecked=true;ids.forEach(id=>checkedIds.add(id));
     feedback.className=step.status;feedback.hidden=false;feedback.replaceChildren();
     const caption=document.createElement('p');caption.className='scripted-caption';caption.textContent='Scripted demo response';
     const title=document.createElement('div');title.className='feedback-title';title.textContent=step.feedbackTitle;
     const detail=document.createElement('p');detail.textContent=step.explanation;feedback.append(caption,title,detail);
     if(step.correction){const correction=document.createElement('div');correction.className='answer';correction.textContent=step.correction;feedback.append(correction);}
-    $('next-step').textContent=['Next: substitute the values →','Correct it & finish →','Finish the demo →'][stepIndex];$('next-step').hidden=false;
+    const retry=lesson==='chemistry'&&stepIndex===0&&stepAttempt===0;
+    $('retry-step').hidden=!retry;
+    $('next-step').hidden=retry;
+    if(!retry){
+      $('next-step').textContent=(lesson==='chemistry'?['Next: second shell →','Next: third shell →','Next: add the electrons →','Finish chemistry →']:['Next: substitute the values →','Correct it & find distance →','Finish physics →'])[stepIndex];
+      if(lesson==='chemistry'&&step.status==='correct')atomSimulation?.setCompletedShells(step.shellCount,{animate:!matchMedia('(prefers-reduced-motion:reduce)').matches});
+    }
     positionCheck();feedback.scrollIntoView({block:'nearest',behavior:'smooth'});
   },700));
 }
+function retryStep(){
+  if(lesson!=='chemistry'||phase!=='guided'||stepIndex!==0||stepAttempt!==0||!stepChecked||busy)return;
+  retireExistingInk();stepAttempt=1;renderStep();toast('Try again with n = 1. Write the corrected step and circle it.');
+}
+function retireExistingInk(){
+  for(const stroke of strokes)checkedIds.add(stroke.id);
+  for(const snapshot of history)for(const stroke of snapshot)checkedIds.add(stroke.id);
+}
 function nextStep(){
   if(!stepChecked||busy)return;
-  if(stepIndex<2){stepIndex++;renderStep();$('guidance-card').scrollIntoView({block:'nearest',behavior:'smooth'});}
-  else{phase='complete';$('guidance-card').hidden=true;$('complete-card').hidden=false;clearSelection();$('phase-caption').textContent='05 / DEMO COMPLETE';$('complete-card').scrollIntoView({block:'nearest',behavior:'smooth'});}
+  if(lesson==='chemistry'&&stepIndex===0&&stepAttempt===0)return;
+  if(stepIndex<lessonSteps().length-1){stepIndex++;stepAttempt=0;renderStep();$('guidance-card').scrollIntoView({block:'nearest',behavior:'smooth'});}
+  else{
+    phase='complete';$('guidance-card').hidden=true;
+    const card=$(lesson==='chemistry'?'chemistry-complete-card':'complete-card');card.hidden=false;
+    clearSelection();$('phase-caption').textContent=lesson==='chemistry'?'CHEMISTRY / 28 ELECTRONS':'05 / PHYSICS COMPLETE';card.scrollIntoView({block:'nearest',behavior:'smooth'});
+  }
+}
+function startChemistry(){
+  if(lesson!=='physics'||phase!=='complete'||busy)return;
+  cancelInteraction();cancelLoading();imageLoadVersion++;simulation?.destroy();simulation=null;atomSimulation?.destroy();atomSimulation=null;
+  lesson='chemistry';phase='place';stepIndex=0;stepAttempt=0;stepChecked=false;checkedIds=new Set();retireExistingInk();
+  hideLessonCards();$('chemistry-upload-card').hidden=false;$('phase-caption').textContent='CHEMISTRY / ADD YOUR NEXT PROBLEM';
+  setTool('move');panel();
+  const bounds=ContentBounds.collect(images,strokes);
+  if(!bounds.empty)cameraController.anchor({x:bounds.right+W*.55,y:bounds.center.y});
+  redraw();scrollPanel();toast('Physics stays on the board. Add your chemistry image in this fresh space.');
 }
 function restart(){
   if((images.length||strokes.length||phase!=='place')&&!confirm('Restart with a blank board? This clears all images and handwriting.'))return;
@@ -588,6 +675,11 @@ const openImagePicker = () => $('image-input').click();
 eventBindings.actions({
   'add-image': openImagePicker,
   'empty-upload': openImagePicker,
+  'add-chemistry-image': openImagePicker,
+  'start-chemistry': startChemistry,
+  'retry-step': retryStep,
+  'restart-all': restart,
+  'replay-atom': () => atomSimulation?.replay(),
   'zoom-in': () => {
     cancelInteraction();
     zoomAt(camera.scale * 1.25);
@@ -601,7 +693,7 @@ eventBindings.actions({
   'choose-box': () => {
     setTool('box');
     board.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    toast('Drag a box around the whole handwritten step.');
+    toast('Draw a loop around the whole handwritten step, then lift.');
   },
   'selection-check': () => imageSelected ? checkImage() : checkInk(),
   'visualize': visualize,
@@ -687,6 +779,10 @@ eventBindings
   .listen(window, 'pagehide', () => {
     cancelInteraction();
     simulation?.pause();
+    atomSimulation?.pause();
+  })
+  .listen(window, 'pageshow', () => {
+    if(atomSimulation)atomSimulation.setCompletedShells(atomSimulation.completedShells,{animate:false});
   });
 
 canvas.tabIndex = 0;

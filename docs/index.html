@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#ffffff"><meta name="description" content="A scripted Draw to Life hackathon demonstration of one motorcycle physics problem.">
+<meta name="theme-color" content="#ffffff"><meta name="description" content="A scripted Draw to Life hackathon demonstration of motorcycle motion and electron-shell capacities.">
 <title>Draw to Life · Scripted demo</title>
-<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=infinite-pencil-3">
+<link rel="icon" href="favicon.svg"><link rel="stylesheet" href="demo.css?v=lasso-chemistry-4">
 </head>
 <body>
 <header class="topbar">
@@ -23,7 +23,7 @@
       <canvas id="ink-canvas" aria-label="Infinite handwriting canvas. Use Pen to write, Move to pan, or two fingers to pan and zoom."></canvas>
     </div>
     <div id="empty-state"><span class="eyebrow">FROM A PROBLEM TO A PICTURE</span><h1>Start with your problem.</h1><p>Insert your problem image, then move it into place.<br>Click its edge, then tap <b>Check</b>.</p><button id="empty-upload" class="text-button">Choose an image from your device ↗</button></div>
-    <div id="writing-hint" hidden>Write one step here. Then use <b>Box step</b> to select it.</div>
+    <div id="writing-hint" hidden>Write one step here. Choose <b>Box step</b> and circle your work.</div>
     <button id="selection-check" class="bubble" hidden>Check</button>
     <div id="selection-help" role="status" hidden></div>
     <div class="drawing-dock">
@@ -38,7 +38,7 @@
       <div class="tools" role="toolbar" aria-label="Whiteboard tools">
         <button data-tool="move" class="active" aria-pressed="true" title="Move / select image">↖ <span>Move</span></button>
         <button data-tool="pen" aria-pressed="false" title="Pen">✎ <span>Pen</span></button>
-        <button data-tool="box" aria-pressed="false" title="Draw a box around your handwritten step">▧ <span>Box step</span></button>
+        <button data-tool="box" aria-pressed="false" title="Draw a freehand loop around your handwritten step">◯ <span>Box step</span></button>
         <button data-tool="eraser" aria-pressed="false" title="Erase a stroke">⌫ <span>Eraser</span></button>
         <span class="tool-divider"></span>
         <button id="undo" aria-label="Undo stroke" title="Undo stroke">↶</button>
@@ -51,10 +51,10 @@
     <div class="panel-top"><span class="eyebrow">DRAW → VISUALIZE → UNDERSTAND</span><span class="preset-label">Preset demo</span></div>
     <section id="loading-card" hidden aria-live="polite"><span class="loading-orbit"></span><h2 id="loading-title">Reviewing your problem…</h2><p id="loading-copy">Showing the prepared motorcycle overview.</p><div class="progress-track"><div id="loading-progress"></div></div><p class="fine">Simulated processing · no AI request</p></section>
     <section id="overview-card" hidden>
-      <h2>A motorcycle. One straight road.</h2><p class="body-copy">She starts east of the city sign and speeds up at a constant rate. We want her velocity and position after two seconds.</p>
-      <dl class="knowns"><div><dt>Initial position</dt><dd>x₀ = 5 m</dd></div><div><dt>Initial velocity</dt><dd>v₀ = 15 m/s</dd></div><div><dt>Acceleration</dt><dd>a = 4 m/s²</dd></div><div><dt>Elapsed time</dt><dd>t = 2 s</dd></div></dl>
-      <div class="question-card"><h3>Want to visualize this?</h3><p>Watch how the motorcycle's speed and position change.</p><button id="visualize" class="primary">Visualize this <span>↗</span></button></div>
-      <p class="fine">This overview is scripted for the supplied problem, regardless of the image placed on the board.</p>
+      <h2 id="overview-title">A motorcycle. One straight road.</h2><p id="overview-summary" class="body-copy">She starts east of the city sign and speeds up at a constant rate. How far does she travel during the next two seconds?</p>
+      <dl id="overview-knowns" class="knowns"><div><dt>Initial position</dt><dd>x₀ = 5 m</dd></div><div><dt>Initial velocity</dt><dd>v₀ = 15 m/s</dd></div><div><dt>Acceleration</dt><dd>a = 4 m/s²</dd></div><div><dt>Elapsed time</dt><dd>t = 2 s</dd></div></dl>
+      <div class="question-card"><h3>Want to visualize this?</h3><p id="overview-visual-prompt">Watch how the motorcycle's speed and position change.</p><button id="visualize" class="primary">Visualize this <span>↗</span></button></div>
+      <p id="overview-disclosure" class="fine">This overview is scripted for the supplied problem, regardless of the image placed on the board.</p>
     </section>
     <section id="video-card" hidden>
       <div class="clip-heading"><h2>Your problem, in motion.</h2><span class="fine">Preset clip</span></div>
@@ -62,16 +62,42 @@
       <div class="clip-controls"><button id="play-video" aria-label="Play or pause visualization">▶</button><input id="video-timeline" type="range" min="0" max="1000" value="0" aria-label="Visualization time"><span id="video-time">0.00 s</span><button id="replay-video" aria-label="Replay visualization">↺</button></div>
       <p class="fine">Prepared motorcycle animation. Your inserted problem stays on the whiteboard as a reference.</p>
     </section>
+    <section id="chemistry-upload-card" class="question-card" hidden>
+      <span class="eyebrow">SECOND LESSON / CHEMISTRY</span><h2>How much room is in three shells?</h2>
+      <p>Manually insert the provided atom problem image for the second lesson. Select its rim with Move, then tap Check. Nothing is preloaded.</p>
+      <button id="add-chemistry-image" class="primary">Add chemistry image <span>＋</span></button>
+    </section>
+    <section id="chemistry-card" hidden>
+      <div class="clip-heading"><h2>Three shells. Three capacities.</h2><span class="fine">Preset visualization</span></div>
+      <p class="body-copy">Each shell's maximum electron capacity is <span class="shell-formula">2n²</span>.</p>
+      <div class="clip-frame atom-frame"><canvas id="atom-canvas" width="900" height="480" aria-label="Progressive electron-shell capacities: first shell 2, second shell 8, third shell 18; total capacity 28."></canvas></div>
+      <div class="atom-controls"><span class="fine">Total shell capacity</span><output id="atom-total" aria-live="polite">0 / 28</output><button id="replay-atom" class="secondary" aria-label="Replay shell-capacity visualization">Replay ↺</button></div>
+      <p class="fine">A schematic of maximum shell capacities, not an actual ground-state atom or the filling order of orbitals.</p>
+    </section>
     <section id="guidance-offer" class="question-card" hidden><h3>Want guidance solving it?</h3><p>Choose an equation, substitute the values, then finish the calculation.</p><button id="start-guidance" class="primary">Yes, guide me <span>→</span></button></section>
     <section id="guidance-card" hidden aria-live="polite">
       <div class="step-progress"><span id="step-count" class="eyebrow">STEP 1 OF 3</span><span id="step-dots">● ○ ○</span></div>
       <h2 id="step-title"></h2><p id="step-prompt" class="body-copy"></p>
-      <details class="presenter-cue"><summary>Presenter cue</summary><p id="expected-writing"></p><p class="fine">Handwrite this on the board, then box it. Responses follow the demo script; the app does not read your ink.</p></details>
-      <button id="choose-box" class="secondary">▧ Box my handwritten step</button>
+      <details class="presenter-cue"><summary>Presenter cue</summary><p id="expected-writing"></p><p class="fine">Handwrite this on the board. Choose Box step and circle it with a freehand loop. Responses follow the demo script; the app does not read your ink.</p></details>
+      <button id="choose-box" class="secondary">◯ Circle my handwritten step</button>
       <div id="step-feedback" hidden></div>
+      <button id="retry-step" class="secondary" hidden>Try this step again ↺</button>
       <button id="next-step" class="primary" hidden></button>
     </section>
-    <section id="complete-card" hidden><span class="eyebrow">DEMO COMPLETE</span><h2>From seeing to understanding.</h2><p class="body-copy">The corrected acceleration gives:</p><div class="answer">v = 15 + 4 × 2 = <b>23 m/s east</b></div><div class="answer">x = 5 + 15 × 2 + ½ × 4 × 2² = <b>43 m east of the sign</b></div><p class="fine">Displacement is 38 m; position includes the initial 5 m.</p><button id="run-again" class="primary">Run the demo again ↺</button></section>
+    <section id="complete-card" hidden>
+      <span class="eyebrow">PHYSICS COMPLETE</span><h2>From seeing to understanding.</h2><p class="body-copy">The corrected acceleration gives the distance travelled:</p>
+      <div class="answer">Δx = 15 × 2 + ½ × 4 × 2² = <b>38 m</b></div>
+      <div class="answer secondary-answer">Final position: x = 5 + 38 = <b>43 m east of the sign</b></div>
+      <p class="fine">She travels 38 m east. Her final position also includes the initial 5 m.</p>
+      <button id="start-chemistry" class="primary">Next: chemistry <span>→</span></button><button id="run-again" class="text-button">Run the demo again ↺</button>
+    </section>
+    <section id="chemistry-complete-card" hidden>
+      <span class="eyebrow">CHEMISTRY COMPLETE</span><h2>Count the capacity, shell by shell.</h2>
+      <p class="body-copy">Using 2n² for n = 1, 2, and 3 gives:</p>
+      <div class="answer">2 + 8 + 18 = <b>28 electrons maximum</b></div>
+      <p class="fine">This is the combined capacity of the first three shells, not a claim about a specific atom's ground-state electron arrangement.</p>
+      <button id="restart-all" class="primary">Restart both lessons <span>↺</span></button>
+    </section>
   </aside>
 </main>
 <div id="toast" role="status" hidden></div>
@@ -80,15 +106,17 @@
   <h2>Space to think. Room to explore.</h2>
   <p>The whiteboard has no fixed page edges. Use <b>Move</b> and drag blank space to pan. Pinch with two fingers or use <b>− / ＋</b> to zoom. Tap the percentage for 100% or <b>Fit all</b> to find all your work.</p>
   <p>Add as many reference images as you need, one at a time. With <b>Move</b> selected, drag an image to place it; select it and drag its corner handle to resize. Adding an image does not erase your work.</p>
-  <p>For Apple Pencil, enable <b>Pencil only</b>: Pencil writes and a finger moves the canvas. Two fingers pan and zoom. Keep <b>Pen</b> selected while writing; use <b>Box step</b> only when ready to check.</p>
+  <p>For Apple Pencil, enable <b>Pencil only</b>: Pencil writes and a finger moves the canvas. Two fingers pan and zoom. Keep <b>Pen</b> selected while writing; choose <b>Box step</b> and draw a freehand circle around your work only when ready to check.</p>
   <ol>
     <li>Use <b>Add image</b> to insert the motorcycle problem screenshot. Select its rim with <b>Move</b>, then tap the black <b>Check</b> bubble.</li>
     <li>Read the preset overview and choose <b>Visualize this</b>. A separately drawn motorcycle accelerates; your reference image stays on the board.</li>
-    <li>Choose <b>Yes, guide me</b>. Write your formula, select <b>Box step</b>, enclose it, and tap <b>Check</b>. Tap <b>Pen</b> to continue writing.</li>
-    <li>The three scripted results are: correct formula, incorrect acceleration (3 instead of 4), then correct final answer.</li>
+    <li>Choose <b>Yes, guide me</b>. Write the velocity formula, choose <b>Box step</b>, circle it with a freehand loop, and tap <b>Check</b>. Tap <b>Pen</b> to continue writing. Step 3 uses the distance formula.</li>
+    <li>The three physics responses confirm the formula, correct an acceleration of 3 to 4 m/s², then confirm <b>38 m travelled</b>. The final position is 43 m east of the sign.</li>
+    <li>Choose <b>Next: chemistry</b> and manually insert the provided atom problem image. Check it and visualize how the first three shells contribute capacities of 2, 8, and 18.</li>
+    <li>For chemistry guidance, first write n = 3 for the first shell to demonstrate the planned mistake. Check explains why the first shell needs n = 1. Retry with n = 1, then work through n = 2, n = 3, and the total <b>2 + 8 + 18 = 28</b>.</li>
   </ol>
-  <p class="fine">No AI, API key, or handwriting recognition is used. Any selected ink triggers that step's predetermined response. The lesson describes this one motorcycle problem, not arbitrary images. Images are never preloaded or sent to an AI service. Refreshing or restarting clears the board.</p>
+  <p class="fine">No AI, API key, server, or handwriting recognition is used. Any selected ink triggers that stage's predetermined response, including the planned chemistry retry. These two lessons do not interpret arbitrary images. Images are never preloaded or sent to an AI service. Refreshing or restarting clears the board.</p>
 </dialog>
-<script type="module" src="demo.js?v=infinite-pencil-3"></script>
+<script type="module" src="demo.js?v=lasso-chemistry-4"></script>
 </body>
 </html>
