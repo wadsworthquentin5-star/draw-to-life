@@ -1,7 +1,7 @@
 export const DEMO_OVERVIEW = Object.freeze({
   simulated: true,
   title: 'A motorcyclist accelerating east',
-  summary: 'At t = 0 s, the rider is 5 m east of the city-limit sign and travelling east at 15 m/s. She accelerates east at a constant 4 m/s². Find her final velocity and the distance she travels in 2 s.',
+  summary: 'At t = 0 s, the rider is 5 m east of the city-limit sign and travelling east at 15 m/s. She accelerates east at a constant 4 m/s². Find her final velocity and final position relative to the sign after 2 s.',
   values: Object.freeze({ x0: 5, v0: 15, a: 4, t: 2, v: 23, x: 43, dx: 38 }),
   knowns: Object.freeze([
     Object.freeze({ symbol: 'x₀', label: 'Initial position', value: 5, unit: 'm' }),
@@ -9,9 +9,8 @@ export const DEMO_OVERVIEW = Object.freeze({
     Object.freeze({ symbol: 'a', label: 'Constant acceleration', value: 4, unit: 'm/s²' }),
     Object.freeze({ symbol: 't', label: 'Elapsed time', value: 2, unit: 's' }),
   ]),
-  unknowns: Object.freeze(['Final velocity v', 'Distance traveled Δx']),
-  equations: Object.freeze(['v = v₀ + at', 'Δx = v₀t + ½at²']),
-  disclosure: 'Scripted demo: the overview, animation and handwriting feedback are predetermined for this problem. No AI reads your image or handwriting.',
+  unknowns: Object.freeze(['Final velocity v', 'Final position x']),
+  equations: Object.freeze(['v = v₀ + at', 'x = x₀ + v₀t + ½at²']),
 });
 
 export const DEMO_STEPS = Object.freeze([
@@ -24,29 +23,29 @@ export const DEMO_STEPS = Object.freeze([
     optionalWriting: 'x = x₀ + v₀t + ½at²',
     status: 'correct',
     feedbackTitle: 'Correct — that is the right equation.',
-    explanation: 'For constant acceleration, v = v₀ + at relates the initial velocity, acceleration and elapsed time to the final velocity. To find position as well, use x = x₀ + v₀t + ½at². This is the planned correct response for step 1; it does not assess your handwriting.',
+    explanation: 'For constant acceleration, v = v₀ + at relates the initial velocity, acceleration and elapsed time to the final velocity. To find position as well, use x = x₀ + v₀t + ½at².',
   }),
   Object.freeze({
     id: 'substitution',
     simulated: true,
     title: '2. Substitute the values',
-    prompt: 'For the planned mistake, write v = 15 + 3 × 2. Put 3 in place of the acceleration, then circle the line to check this step.',
+    prompt: 'Substitute the known values into your velocity equation, then circle the line to check this step.',
     expectedWriting: 'v = 15 + 3 × 2',
     status: 'incorrect',
     feedbackTitle: 'Check the acceleration: 3 should be 4.',
-    explanation: 'The planned error is the acceleration, not the equation: the problem gives a = 4 m/s², not 3 m/s². The initial velocity 15 m/s and time 2 s are correct. Replace 3 with 4: Δv = at = 4 × 2 = 8 m/s, so v = 15 + 8 = 23 m/s. This is the scripted feedback for step 2, not a reading of your handwriting.',
+    explanation: 'The error is the acceleration, not the equation: the problem gives a = 4 m/s², not 3 m/s². The initial velocity 15 m/s and time 2 s are correct. Replace 3 with 4: Δv = at = 4 × 2 = 8 m/s, so v = 15 + 8 = 23 m/s.',
     correction: 'v = 15 + 4 × 2 = 23 m/s',
   }),
   Object.freeze({
     id: 'answer',
     simulated: true,
-    title: '3. Find the distance traveled',
-    prompt: 'Use a = 4 m/s² to find how far the motorcycle travels in 2 s. Write Δx = v₀t + ½at², substitute the values, and circle your answer with its units.',
-    expectedWriting: 'Δx = 15 × 2 + ½ × 4 × 2² = 38 m',
-    optionalWriting: 'Distance = 30 + 8 = 38 m',
+    title: '3. Find the final position',
+    prompt: 'How far east of the city-limit sign is she at t = 2 s? Use x = x₀ + v₀t + ½at² with x₀ = 5 m, substitute the values, and circle your answer with its units.',
+    expectedWriting: 'x = 5 + 15 × 2 + ½ × 4 × 2² = 43 m',
+    optionalWriting: 'x = 5 + 30 + 8 = 43 m east of the sign',
     status: 'correct',
-    feedbackTitle: 'Yes — the distance traveled is 38 m.',
-    explanation: 'Δx = v₀t + ½at² = 15 × 2 + ½ × 4 × 2² = 30 + 8 = 38 m. The motorcycle keeps moving east, so its distance traveled equals the magnitude of its displacement. The initial position 5 m is not extra distance traveled: adding it gives the final position x = 5 + 38 = 43 m east of the sign. This is the planned correct response for step 3; it does not assess your handwriting.',
+    feedbackTitle: 'Yes — her final position is 43 m east of the sign.',
+    explanation: 'The motorcycle travels 15 × 2 + ½ × 4 × 2² = 30 + 8 = 38 m from her starting point. She starts 5 m east of the sign, so her final position is x = 5 + 38 = 43 m east of the city-limit sign. The 38 m is distance traveled; the 43 m is her final position relative to the sign.',
     answers: Object.freeze({ distance: '38 m', velocity: '23 m/s east', position: '43 m east of the sign', displacement: '38 m east' }),
   }),
 ]);
@@ -67,7 +66,6 @@ export const CHEMISTRY_OVERVIEW = Object.freeze({
   unknowns: Object.freeze(['Capacity of each shell', 'Combined maximum capacity']),
   equations: Object.freeze(['capacity = 2n²', 'total = 2 + 8 + 18 = 28']),
   modelNote: 'This is a maximum shell-capacity model, not the ground-state electron configuration or filling order of an actual atom.',
-  disclosure: 'Scripted demo: the shell diagrams and handwriting feedback follow a predetermined sequence. No AI reads or grades your handwriting.',
 });
 
 export const CHEMISTRY_STEPS = Object.freeze([
@@ -79,15 +77,15 @@ export const CHEMISTRY_STEPS = Object.freeze([
     expectedWriting: '2(1)^2 = 2',
     status: 'correct',
     feedbackTitle: 'Correct — the first shell holds up to 2 electrons.',
-    explanation: 'The shell number is n = 1, so 2n² = 2 × 1² = 2 electrons. The first shell is now complete in this capacity model. This is the scripted response for the corrected attempt, not a reading of your handwriting.',
+    explanation: 'The shell number is n = 1, so 2n² = 2 × 1² = 2 electrons. The first shell is now complete in this capacity model.',
     shellCount: 1,
     firstAttempt: Object.freeze({
       simulated: true,
       status: 'incorrect',
       expectedWriting: '2(3)^2 = 18',
-      prompt: 'For the planned first attempt, write 2(3)^2 = 18 for the first shell, then circle the calculation.',
+      prompt: 'Use 2n² to find the capacity of the first shell. Write your calculation, then circle it to check your work.',
       feedbackTitle: 'Use the first shell number: n = 1, not 3.',
-      explanation: 'The arithmetic 2 × 3² = 18 is correct for the third shell, but this question asks about the first shell. Use its shell number n = 1: 2 × 1² = 2. Write a new corrected line and circle that new handwriting before continuing. This is a scripted correction, not handwriting recognition.',
+      explanation: 'The arithmetic 2 × 3² = 18 is correct for the third shell, but this question asks about the first shell. Use its shell number n = 1: 2 × 1² = 2. Write a new corrected line and circle that new handwriting before continuing.',
       retryPrompt: 'Try the first shell again with n = 1. Write 2(1)^2 = 2 as new handwriting, then circle it and tap Check.',
       retryExpectedWriting: '2(1)^2 = 2',
       correction: '2(1)^2 = 2 electrons',
@@ -104,7 +102,7 @@ export const CHEMISTRY_STEPS = Object.freeze([
     expectedWriting: '2(2)^2 = 8',
     status: 'correct',
     feedbackTitle: 'Correct — the second shell holds up to 8 electrons.',
-    explanation: 'For n = 2, the capacity is 2 × 2² = 2 × 4 = 8 electrons. Two shells are now complete in this capacity model. This is the predetermined response for step 2.',
+    explanation: 'For n = 2, the capacity is 2 × 2² = 2 × 4 = 8 electrons. Two shells are now complete in this capacity model.',
     shellCount: 2,
   }),
   Object.freeze({
@@ -115,7 +113,7 @@ export const CHEMISTRY_STEPS = Object.freeze([
     expectedWriting: '2(3)^2 = 18',
     status: 'correct',
     feedbackTitle: 'Correct — the third shell holds up to 18 electrons.',
-    explanation: 'For n = 3, the capacity is 2 × 3² = 2 × 9 = 18 electrons. All three shells are now complete in this capacity model; this does not describe the ground-state arrangement of a specific atom. This is the predetermined response for step 3.',
+    explanation: 'For n = 3, the capacity is 2 × 3² = 2 × 9 = 18 electrons. All three shells are now complete in this capacity model; this does not describe the ground-state arrangement of a specific atom.',
     shellCount: 3,
   }),
   Object.freeze({
@@ -126,7 +124,7 @@ export const CHEMISTRY_STEPS = Object.freeze([
     expectedWriting: '2 + 8 + 18 = 28',
     status: 'correct',
     feedbackTitle: 'Correct — the combined maximum capacity is 28 electrons.',
-    explanation: 'The first three shells have maximum capacities 2, 8 and 18, giving 2 + 8 + 18 = 28 electrons. This sum is a capacity total, not the ground-state electron configuration of a 28-electron atom. This is the predetermined response for the final step.',
+    explanation: 'The first three shells have maximum capacities 2, 8 and 18, giving 2 + 8 + 18 = 28 electrons. This sum is a capacity total, not the ground-state electron configuration of a 28-electron atom.',
     shellCount: 3,
     answers: Object.freeze({ firstShell: 2, secondShell: 8, thirdShell: 18, total: 28 }),
   }),

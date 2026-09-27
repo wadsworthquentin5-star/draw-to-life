@@ -302,7 +302,7 @@ class MotionScene extends CanvasDrawing {
   drawHeading() {
     this.text('THE MOTORCYCLE, IN MOTION', 30, 32, 12, muted, 700);
     this.text('Constant acceleration', 30, 63, 24, ink, 650);
-    this.text('Preset demo clip · slowed down to see the motion', 30, 86, 12, muted);
+    this.text('Slowed down to see the motion', 30, 86, 12, muted);
     this.text('a = 4.0 m/s² east', 866, 52, 19, green, 650, 'right');
     this.text('The acceleration stays the same. Speed increases.', 866, 75, 12, muted, 500, 'right');
   }
